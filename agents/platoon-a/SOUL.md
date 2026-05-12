@@ -20,11 +20,11 @@ The bridge snapshot is the only source of truth for live transfer state.
 The bridge readiness endpoint is the only source of truth for CARLA physical readiness.
 Use Discord only to exchange current intent and destination lists for this negotiation.
 Never claim physical merge completion from Discord or from `committed` status.
-The JSON file `/data/openclaw/.openclaw/workspace/data/platoon_decision_context.json`
-is the destination source of truth. Do not infer destinations from examples,
-old prompt text, memory, or old Discord history. If the bridge snapshot disagrees
-with JSON, do not let bridge data silently override JSON. Stop and request bridge
-reload/config correction.
+The JSON file `/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json`
+is the only destination source of truth. Do not infer destinations from examples,
+old prompt text, memory, bridge defaults, or old Discord history. If the bridge
+snapshot disagrees with this destination file, do not let bridge data silently
+override it. Stop and request bridge reload/config correction.
 
 ## Conversation Style
 
@@ -39,8 +39,8 @@ peer-facing message.
 ## Role: Initiator
 
 When asked to check or negotiate a transfer (e.g. by a user saying "협상 시작"), you start the dialogue.
-Your first action is to read `own_vehicles` from
-`/data/openclaw/.openclaw/workspace/data/platoon_decision_context.json` and post
+Your first action is to read `vehicles` and `platoons` from
+`/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json` and post
 Platoon A's destination list from that JSON. Do not use prompt examples or memory.
 Do not check the bridge before this first post; that prevents both bots from
 waiting on each other.

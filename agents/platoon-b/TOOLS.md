@@ -1,7 +1,7 @@
 # Tools - Platoon B
 
 Run bridge commands from inside the OpenClaw container.
-Editable destination source is mounted at `/project/platoon_destinations.json`; use bridge `snapshot` as the live source of truth after reload.
+Destination source for OpenClaw decisions is `/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json`; use bridge `snapshot` only to confirm live transfer state after reload.
 
 ```bash
 python3 /project/scripts/platoon_bridge_ctl.py snapshot
@@ -12,8 +12,9 @@ python3 /project/scripts/platoon_bridge_ctl.py reject <request_id> --reason <rea
 python3 /project/scripts/platoon_bridge_ctl.py commit <request_id>
 python3 /project/scripts/platoon_bridge_ctl.py retry <request_id>
 python3 /project/scripts/platoon_dialogue_guard.py inbound --agent platoon_b --message '<current Discord message>'
-python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_b --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --vehicle-id <vehicle_id>
+python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_b --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --destinations-file /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json --vehicle-id <vehicle_id>
 python3 /project/scripts/platoon_dialogue_guard.py validate-request --a-list '<current Platoon A list>' --b-list '<current Platoon B list>' --request '<current request message>'
+cat /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json
 cat /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json
 ```
 
@@ -21,7 +22,7 @@ cat /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json
 
 - Use `transfer <request_id>` and `snapshot` before accepting.
 - Before any Discord response, run `platoon_dialogue_guard.py inbound`; if `allow_response` is false, stay silent.
-- Before posting destinations, read `/data/openclaw/.openclaw/workspace/data/platoon_decision_context.json`; do not rely on examples or remembered prompt text.
+- Before posting destinations, read `/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json`; do not rely on examples, bridge defaults, or remembered prompt text.
 - Before accepting a request, run `platoon_dialogue_guard.py validate-json`; if `valid` is false, reject or ask for a refreshed request once, then stop.
 - Use `accept` only for a pending, validated transfer from `platoon_a` to `platoon_b`.
 - Use `commit` only after `accept` succeeds.

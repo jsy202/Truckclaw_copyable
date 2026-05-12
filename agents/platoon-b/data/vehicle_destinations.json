@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "map": "Town06",
+  "destination_points": {
+    "dest_a": {
+      "label": "Upper Side Road",
+      "description": "road=71 lane=-4, upper right side-road branch",
+      "location": {
+        "x": 599.1,
+        "y": 241.2,
+        "z": 0.0
+      }
+    },
+    "dest_b": {
+      "label": "Lower Side Road",
+      "description": "road=1083 lane=-4, lower right side-road branch",
+      "location": {
+        "x": 480.3,
+        "y": 41.7,
+        "z": 0.0
+      }
+    }
+  },
+  "platoons": {
+    "platoon_a": {
+      "destination_id": "dest_a",
+      "leader_vehicle_id": "platoon_a_truck0",
+      "ordered_members": [
+        "platoon_a_truck0",
+        "platoon_a_truck1",
+        "platoon_a_truck2"
+      ]
+    },
+    "platoon_b": {
+      "destination_id": "dest_b",
+      "leader_vehicle_id": "platoon_b_truck0",
+      "ordered_members": [
+        "platoon_b_truck0",
+        "platoon_b_truck1",
+        "platoon_b_truck2"
+      ]
+    }
+  },
+  "vehicles": {
+    "platoon_a_truck0": {
+      "platoon_id": "platoon_a",
+      "local_truck_id": 0,
+      "role": "leader",
+      "destination_id": "dest_a"
+    },
+    "platoon_a_truck1": {
+      "platoon_id": "platoon_a",
+      "local_truck_id": 1,
+      "role": "follower",
+      "destination_id": "dest_b"
+    },
+    "platoon_a_truck2": {
+      "platoon_id": "platoon_a",
+      "local_truck_id": 2,
+      "role": "follower",
+      "destination_id": "dest_a"
+    },
+    "platoon_b_truck0": {
+      "platoon_id": "platoon_b",
+      "local_truck_id": 0,
+      "role": "leader",
+      "destination_id": "dest_b"
+    },
+    "platoon_b_truck1": {
+      "platoon_id": "platoon_b",
+      "local_truck_id": 1,
+      "role": "follower",
+      "destination_id": "dest_b"
+    },
+    "platoon_b_truck2": {
+      "platoon_id": "platoon_b",
+      "local_truck_id": 2,
+      "role": "follower",
+      "destination_id": "dest_b"
+    }
+  }
+}

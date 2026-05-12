@@ -18,19 +18,19 @@ message. If it returns `allow_response: false`, stay silent.
 ## Step 1 - Read destination context from JSON
 
 Do not rely on prompt examples, memory, or old Discord history for destinations.
-Read the JSON file first:
+Read the destination JSON file first:
 
 ```bash
-cat /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json
+cat /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json
 ```
 
 Record:
-- `own_platoon.destination_id`
-- `peer_platoon.destination_id`
-- `own_vehicles[]`: `vehicle_id`, `role`, `destination_id` for each truck.
+- `platoons.platoon_a.destination_id`
+- `platoons.platoon_b.destination_id`
+- `vehicles`: `vehicle_id`, `role`, `destination_id` for Platoon A trucks.
 
 Only after reading JSON, you may use the bridge snapshot to confirm live state.
-If bridge destinations disagree with JSON, stop and request bridge reload/config correction.
+If bridge destinations disagree with `vehicle_destinations.json`, stop and request bridge reload/config correction.
 
 ## Step 2 - Post destination list first
 
@@ -74,20 +74,20 @@ Safe bridge checks:
 - If any transfer for `platoon_a` or `platoon_b` is `pending` or `accepted`, do not create another request.
 - If the expected vehicle is already a member of `platoon_b`, do not create another request.
 - If bridge candidates do not include the same `vehicle_id` and `target_platoon_id: platoon_b`, stop and explain the mismatch.
-- If bridge destinations disagree with JSON, stop. Do not override JSON with bridge data.
+- If bridge destinations disagree with `vehicle_destinations.json`, stop. Do not override the destination file with bridge data.
 
 ## Step 5 - Select exactly one candidate
 
 Eligible vehicle criteria:
 
-- `destination_id` from JSON `own_vehicles` matches JSON `peer_platoon.destination_id`
+- `destination_id` from `vehicle_destinations.json` for the candidate vehicle matches `platoons.platoon_b.destination_id`
 - the bridge still shows it in `platoon_a`
 - the bridge candidate list agrees
 
 Before posting the comparison result, validate JSON:
 
 ```bash
-python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_a --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --vehicle-id <vehicle_id>
+python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_a --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --destinations-file /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json --vehicle-id <vehicle_id>
 ```
 
 If `valid` is false, send one mismatch message and stop.
@@ -183,7 +183,7 @@ python3 /project/scripts/platoon_bridge_ctl.py retry <request_id>
 - Step 2 is always first in a fresh dialogue.
 - Ignore any current Discord message that does not explicitly mention `<@1479297673432399923>` or `@TRUCKCLAW2`.
 - Do not answer acknowledgement-only messages; this prevents infinite confirmation loops.
-- Treat JSON destination data as the safety contract. Bridge data may confirm it, but must not silently replace it.
+- Treat `vehicle_destinations.json` as the safety contract. Bridge data may confirm it, but must not silently replace it.
 - Every Discord message to TRUCKCLAW1 must start with `<@1479297098938585170>`.
 - Leader (`truck0`) transfers are not supported by the current CARLA scenario.
 - Create at most one request per negotiation.

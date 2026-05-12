@@ -19,8 +19,8 @@ Before any Discord response, run `platoon_dialogue_guard.py inbound --agent plat
 
 ## Required Workflow
 
-1. Read `/data/openclaw/.openclaw/workspace/data/platoon_decision_context.json`.
-2. Post Platoon A's destination list from JSON only.
+1. Read `/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json`.
+2. Post Platoon A's destination list from that destination JSON only.
 3. Wait for TRUCKCLAW1 to post Platoon B's destination list in the current dialogue.
 4. Run bridge checks before requesting transfer.
 5. Request exactly one eligible follower transfer, or state that no safe transfer is available.
@@ -33,9 +33,9 @@ Transfer only if all are true:
 
 - The vehicle is a Platoon A follower.
 - The vehicle is not a leader and is not `platoon_a_truck0`.
-- The vehicle destination in JSON equals Platoon B's JSON platoon destination.
+- The vehicle destination in `vehicle_destinations.json` equals Platoon B's platoon destination in the same file.
 - `platoon_dialogue_guard.py validate-json --agent platoon_a` returns `valid: true`.
-- The bridge snapshot agrees with the JSON destinations; if not, stop and ask for bridge reload/config correction.
+- The bridge snapshot agrees with `vehicle_destinations.json`; if not, stop and ask for bridge reload/config correction.
 - Bridge `candidates platoon_a` includes the same vehicle and target platoon.
 - Snapshot shows no active pending or accepted transfer for either platoon.
 

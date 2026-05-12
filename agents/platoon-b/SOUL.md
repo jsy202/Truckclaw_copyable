@@ -20,11 +20,11 @@ The bridge snapshot is the only source of truth for live transfer state.
 The bridge readiness endpoint is the only source of truth for CARLA physical readiness.
 Use Discord only to exchange current intent, destination lists, and request ids.
 Never claim physical merge completion from Discord or from `committed` status.
-The JSON file `/data/openclaw/.openclaw/workspace/data/platoon_decision_context.json`
-is the destination source of truth. Do not infer destinations from examples,
-old prompt text, memory, or old Discord history. If the bridge snapshot disagrees
-with JSON, do not let bridge data silently override JSON. Reject once with a
-mismatch reason and stop.
+The JSON file `/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json`
+is the only destination source of truth. Do not infer destinations from examples,
+old prompt text, memory, bridge defaults, or old Discord history. If the bridge
+snapshot disagrees with this destination file, do not let bridge data silently
+override it. Reject once with a mismatch reason and stop.
 
 ## Conversation Style
 

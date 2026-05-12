@@ -172,22 +172,42 @@ def command_validate_request(args):
     return 0 if not errors else 2
 
 
-def _context_destinations(context, key):
-    return {v["vehicle_id"]: v["destination_id"] for v in context.get(key, [])}
+def _load_destinations_config(args, context):
+    path = args.destinations_file or context.get("destination_file")
+    if not path:
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _vehicle_destinations(destinations_config, platoon_id):
+    vehicles = destinations_config.get("vehicles", {})
+    return {
+        vehicle_id: vehicle.get("destination_id")
+        for vehicle_id, vehicle in vehicles.items()
+        if vehicle.get("platoon_id") == platoon_id
+    }
+
+
+def _platoon_destination(destinations_config, platoon_id):
+    return destinations_config.get("platoons", {}).get(platoon_id, {}).get("destination_id")
 
 
 def command_validate_json(args):
     with open(args.context_file, "r", encoding="utf-8") as f:
         context = json.load(f)
 
+    destinations_config = _load_destinations_config(args, context)
     if args.agent == "platoon_a":
-        source_destinations = _context_destinations(context, "own_vehicles")
-        source_platoon_dest = context.get("own_platoon", {}).get("destination_id")
-        target_platoon_dest = context.get("peer_platoon", {}).get("destination_id")
+        source_platoon_id = context.get("own_platoon", {}).get("platoon_id", "platoon_a")
+        target_platoon_id = context.get("peer_platoon", {}).get("platoon_id", "platoon_b")
     else:
-        source_destinations = _context_destinations(context, "peer_vehicles")
-        source_platoon_dest = context.get("peer_platoon", {}).get("destination_id")
-        target_platoon_dest = context.get("own_platoon", {}).get("destination_id")
+        source_platoon_id = context.get("peer_platoon", {}).get("platoon_id", "platoon_a")
+        target_platoon_id = context.get("own_platoon", {}).get("platoon_id", "platoon_b")
+
+    source_destinations = _vehicle_destinations(destinations_config, source_platoon_id)
+    source_platoon_dest = _platoon_destination(destinations_config, source_platoon_id)
+    target_platoon_dest = _platoon_destination(destinations_config, target_platoon_id)
 
     candidates = sorted(
         vehicle_id for vehicle_id, destination_id in source_destinations.items()
@@ -198,14 +218,16 @@ def command_validate_json(args):
     )
 
     errors = []
+    if not destinations_config:
+        errors.append("missing destination file")
     if not source_destinations:
-        errors.append("missing source vehicle destinations in JSON context")
+        errors.append("missing source vehicle destinations in destination file")
     if not source_platoon_dest:
-        errors.append("missing source platoon destination in JSON context")
+        errors.append("missing source platoon destination in destination file")
     if not target_platoon_dest:
-        errors.append("missing target platoon destination in JSON context")
+        errors.append("missing target platoon destination in destination file")
     if args.vehicle_id not in candidates:
-        errors.append(f"{args.vehicle_id} is not destination-compatible from JSON context")
+        errors.append(f"{args.vehicle_id} is not destination-compatible from destination file")
     if len(candidates) > 1:
         errors.append(f"ambiguous JSON candidates: {', '.join(candidates)}")
 
@@ -213,6 +235,7 @@ def command_validate_json(args):
         "valid": not errors,
         "vehicle_id": args.vehicle_id,
         "json_candidates": candidates,
+        "destination_file": args.destinations_file or context.get("destination_file"),
         "source_platoon_destination": source_platoon_dest,
         "target_platoon_destination": target_platoon_dest,
         "source_destinations": source_destinations,
@@ -242,6 +265,7 @@ def build_parser():
     validate_json = sub.add_parser("validate-json")
     validate_json.add_argument("--agent", choices=AGENTS.keys(), required=True)
     validate_json.add_argument("--context-file", required=True)
+    validate_json.add_argument("--destinations-file")
     validate_json.add_argument("--vehicle-id", required=True)
 
     return parser

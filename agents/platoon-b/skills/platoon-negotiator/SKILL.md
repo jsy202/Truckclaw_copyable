@@ -26,10 +26,10 @@ list, request_id, or new status, do not reply.
 ## Step 2 - Post your own destination list
 
 Do not rely on prompt examples, memory, or old Discord history for destinations.
-Read the JSON file first:
+Read the destination JSON file first:
 
 ```bash
-cat /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json
+cat /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json
 ```
 
 Reply to TRUCKCLAW2 with this deterministic format:
@@ -58,13 +58,13 @@ The transfer must have:
 
 **Validation against previous agreement:**
 - Verify that `vehicle_id` matches the candidate discussed in Step 1/2.
-- Verify that the vehicle's `destination_id` from JSON `peer_vehicles` matches JSON `own_platoon.destination_id`.
+- Verify that the vehicle's `destination_id` from `vehicle_destinations.json` matches `platoons.platoon_b.destination_id` in the same file.
 - Use bridge data only to confirm JSON. If bridge data disagrees with JSON, reject once with a mismatch reason and stop.
 
 Run the deterministic guard before accepting:
 
 ```bash
-python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_b --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --vehicle-id <vehicle_id>
+python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_b --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --destinations-file /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json --vehicle-id <vehicle_id>
 ```
 
 If any field mismatches, reject or ask TRUCKCLAW2 to refresh.
@@ -80,7 +80,7 @@ python3 /project/scripts/platoon_bridge_ctl.py snapshot
 Safe bridge checks:
 
 - The requested vehicle is still in `platoon_a`.
-- The requested vehicle JSON `destination_id` equals Platoon B's JSON `own_platoon.destination_id`.
+- The requested vehicle destination in `vehicle_destinations.json` equals Platoon B's destination in the same file.
 - No transfer other than the current request for `platoon_a` or `platoon_b` is `pending` or `accepted`.
 - If the vehicle is already in `platoon_b` and the transfer is `committed`, do not accept again; report the existing status.
 
@@ -189,7 +189,7 @@ python3 /project/scripts/platoon_bridge_ctl.py retry <request_id>
 - Step 1 is always first in a fresh dialogue.
 - Ignore any current Discord message that does not explicitly mention `<@1479297098938585170>` or `@TRUCKCLAW1`.
 - Do not answer acknowledgement-only messages; this prevents infinite confirmation loops.
-- Treat JSON destination data as the safety contract. Bridge data may confirm it, but must not silently replace it.
+- Treat `vehicle_destinations.json` as the safety contract. Bridge data may confirm it, but must not silently replace it.
 - Every Discord message to TRUCKCLAW2 must start with `<@1479297673432399923>`.
 - Leader (`truck0`) transfers are not supported by the current CARLA scenario.
 - Accept and commit at most one request per negotiation.
