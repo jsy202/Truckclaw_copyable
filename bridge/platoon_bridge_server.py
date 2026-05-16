@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import copy
 
-CARLA_TRIGGER_URL = os.environ.get("CARLA_TRIGGER_URL", "http://127.0.0.1:18802/start_merge")
+CARLA_TRIGGER_URL   = os.environ.get("CARLA_TRIGGER_URL",   "http://127.0.0.1:18802/start_merge")
+CARLA_REPLICATE_URL = os.environ.get("CARLA_REPLICATE_URL", "http://127.0.0.1:18802/start_replicate")
 ACTIVE_TRANSFER_STATUSES = ("pending", "accepted", "committed", "merging", "splitting")
 FAILURE_TRANSFER_STATUSES = ("trigger_failed", "merge_failed")
 DEFAULT_CONFIG_PATHS = [
@@ -180,6 +181,20 @@ def _notify_carla_trigger(request_id: str):
             print(f"[bridge] CARLA trigger failed: {e}")
     threading.Thread(target=_do, daemon=True).start()
 
+def _notify_carla_replicate(vehicle_id: str):
+    """OpenClaw이 복제 명령 → 브리지가 CARLA 18802/start_replicate 호출."""
+    def _do():
+        try:
+            payload = json.dumps({"vehicle_id": vehicle_id}).encode("utf-8")
+            req = urllib.request.Request(
+                CARLA_REPLICATE_URL, data=payload, method="POST",
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=2)
+            print(f"[bridge] CARLA replicate trigger sent (vehicle={vehicle_id})")
+        except Exception as e:
+            print(f"[bridge] CARLA replicate trigger failed: {e}")
+    threading.Thread(target=_do, daemon=True).start()
+
 def _transfer_candidates(platoon_id: str) -> list:
     p = _platoons.get(platoon_id)
     if not p: return []
@@ -243,6 +258,12 @@ class Handler(BaseHTTPRequestHandler):
                 _readiness = _initial_readiness()
                 _readiness["updated_at"] = _now()
                 self._ok({"ok": True})
+            elif p == "/replicate":
+                # OpenClaw 에이전트가 복제 명령을 내릴 때 호출
+                # POST /replicate {"vehicle_id": "platoon_a_truck2"}
+                vid = body.get("vehicle_id", "platoon_a_truck2")
+                _notify_carla_replicate(vid)
+                self._ok({"ok": True, "vehicle_id": vid, "status": "replicate_triggered"})
             elif p == "/transfers":
                 vid, fp, tp = body.get("vehicle_id"), body.get("from_platoon_id"), body.get("to_platoon_id")
                 if not vid or not fp or not tp: return self._err(400, "missing fields")

@@ -15,6 +15,27 @@ message. If it returns `allow_response: false`, stay silent.
 
 ---
 
+## Step 0 - 분기 대상 vehicle 복제 (협상 전 반드시 먼저)
+
+협상을 시작하기 전에 분기 대상 vehicle의 OpenClaw 복제본을 CARLA에 생성한다.
+이 명령이 완료돼야 truck_3 에이전트가 Discord에서 협상에 참여할 수 있다.
+
+```bash
+python3 /project/scripts/platoon_bridge_ctl.py replicate platoon_a_truck2
+```
+
+성공 응답 예시:
+```json
+{"ok": true, "vehicle_id": "platoon_a_truck2", "status": "replicate_triggered"}
+```
+
+`ok: true` 확인 후 Step 1로 진행한다.
+실패 시 한 번 재시도. 그래도 실패하면 복제 실패를 보고하고 중단한다.
+
+**STOP HERE until replicate returns ok: true.**
+
+---
+
 ## Step 1 - Read destination context from JSON
 
 Do not rely on prompt examples, memory, or old Discord history for destinations.

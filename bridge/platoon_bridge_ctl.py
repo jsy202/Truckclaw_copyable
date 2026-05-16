@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("readiness")
     sub.add_parser("reload")
 
+    replicate = sub.add_parser("replicate")
+    replicate.add_argument("vehicle_id", nargs="?", default="platoon_a_truck2",
+                           help="복제할 vehicle_id (기본: platoon_a_truck2)")
+
     platoon = sub.add_parser("platoon")
     platoon.add_argument("platoon_id")
 
@@ -84,6 +88,8 @@ def main() -> int:
         payload = _http("GET", f"{base}/readiness")
     elif args.command == "reload":
         payload = _http("POST", f"{base}/reload", {})
+    elif args.command == "replicate":
+        payload = _http("POST", f"{base}/replicate", {"vehicle_id": args.vehicle_id})
     elif args.command == "platoon":
         payload = _http("GET", f"{base}/platoons/{parse.quote(args.platoon_id)}")
     elif args.command == "candidates":

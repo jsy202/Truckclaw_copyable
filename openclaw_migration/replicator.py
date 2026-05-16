@@ -69,8 +69,10 @@ def _v2v_transfer(src, dst, label):
     src = Path(src)
     total = src.stat().st_size; transferred = 0
     with open(src, "rb") as sf, open(dst, "wb") as df:
-        while chunk := sf.read(CHUNK_SIZE):
+        chunk = sf.read(CHUNK_SIZE)
+        while chunk:
             df.write(chunk); transferred += len(chunk)
+            chunk = sf.read(CHUNK_SIZE)
             pct = transferred / total * 100
             bar = "█" * int(pct/5) + "░" * (20 - int(pct/5))
             print(f"\r  [V2V] {label:22s} [{bar}] {pct:5.1f}%  {transferred/1024/1024:.1f}/{total/1024/1024:.1f} MB", end="", flush=True)

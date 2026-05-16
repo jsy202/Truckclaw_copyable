@@ -33,10 +33,22 @@ class LowLevelController:
             self.pid_args_longitudinal = {'K_P': 2 / 5, 'K_I': 0.26 / 2, 'K_D': 0.26 / 3, 'dt': 0.01}
 
         self._vehicle = vehicle
-        self.pid = controller.VehiclePIDController(self._vehicle,
+        self.pid = self._make_pid(vehicle)
+
+    def _make_pid(self, vehicle):
+        """CARLA 버전 호환: 0.9.6은 max_brake/max_throttle 없음"""
+        import inspect
+        sig = inspect.signature(controller.VehiclePIDController.__init__)
+        if 'max_brake' in sig.parameters:
+            return controller.VehiclePIDController(vehicle,
                                                    args_lateral=self.pid_args_lateral,
                                                    args_longitudinal=self.pid_args_longitudinal,
-                                                   max_brake=self.max_brake, max_throttle=self.max_throttle)
+                                                   max_brake=self.max_brake,
+                                                   max_throttle=self.max_throttle)
+        else:
+            return controller.VehiclePIDController(vehicle,
+                                                   args_lateral=self.pid_args_lateral,
+                                                   args_longitudinal=self.pid_args_longitudinal)
 
     @property
     def vehicle(self):
@@ -45,10 +57,7 @@ class LowLevelController:
     @vehicle.setter
     def vehicle(self, vehicle):
         self._vehicle = vehicle
-        self.pid = controller.VehiclePIDController(self._vehicle,
-                                                   args_lateral=self.pid_args_lateral,
-                                                   args_longitudinal=self.pid_args_longitudinal,
-                                                   max_brake=self.max_brake, max_throttle=self.max_throttle)
+        self.pid = self._make_pid(vehicle)
         # pid needs to be redefined as vehicle cannot be changed in VehiclePIDController
 
 
@@ -203,15 +212,10 @@ class LeadNavigator(LowLevelController):
         wpt = min(next_wpts, key=lambda x: self._yaw_diff(x.transform.rotation.yaw, driving_direction))
 
         if wpt.is_junction:
-            junction_wpt_pairs = wpt.get_junction().get_waypoints(carla.LaneType.Driving)
-            junction_wpts_1 = [w[0] for w in junction_wpt_pairs]
-            junction_wpts_2 = [w[1] for w in junction_wpt_pairs]
-            wpt_1 = min(junction_wpts_1, key=lambda x: self._yaw_diff(x.transform.rotation.yaw, driving_direction))
-            wpt_2 = min(junction_wpts_2, key=lambda x: self._yaw_diff(x.transform.rotation.yaw, driving_direction))
-            # Pick exit with minimum yaw deviation (straight-ahead), not maximum
-            # distance from last waypoint — the old max-distance heuristic
-            # selected off-ramps instead of the highway continuation.
-            wpt = min(wpt_1, wpt_2, key=lambda x: self._yaw_diff(x.transform.rotation.yaw, driving_direction))
+            # CARLA 0.9.6: get_junction() 없음 → next()로 직진 방향 선택
+            next_from_junction = wpt.next(5.0)
+            if next_from_junction:
+                wpt = min(next_from_junction, key=lambda x: self._yaw_diff(x.transform.rotation.yaw, driving_direction))
 
         self.waypoints_ahead.append(wpt)
 

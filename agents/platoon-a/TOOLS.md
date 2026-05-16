@@ -8,6 +8,7 @@ python3 /project/scripts/platoon_bridge_ctl.py snapshot
 python3 /project/scripts/platoon_bridge_ctl.py readiness
 python3 /project/scripts/platoon_bridge_ctl.py candidates platoon_a
 python3 /project/scripts/platoon_bridge_ctl.py transfer <request_id>
+python3 /project/scripts/platoon_bridge_ctl.py replicate platoon_a_truck2
 python3 /project/scripts/platoon_bridge_ctl.py request <vehicle_id> platoon_a platoon_b --reason destination_match --sender-agent platoon_a --receiver-agent platoon_b
 python3 /project/scripts/platoon_dialogue_guard.py inbound --agent platoon_a --message '<current Discord message>'
 python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_a --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --destinations-file /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json --vehicle-id <vehicle_id>
@@ -18,6 +19,7 @@ cat /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json
 
 ## Safe Use
 
+- **협상 전 반드시 `replicate` 먼저 실행**: 분기 대상 vehicle의 OpenClaw 복제본이 생성돼야 협상이 의미 있음.
 - Use `snapshot` before creating a request and after the peer reports commit.
 - Before any Discord response, run `platoon_dialogue_guard.py inbound`; if `allow_response` is false, stay silent.
 - Before posting destinations, read `/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json`; do not rely on examples, bridge defaults, or remembered prompt text.
