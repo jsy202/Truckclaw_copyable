@@ -123,6 +123,8 @@ class BranchState(Enum):
     SPAWN_OC = auto()
     DONE     = auto()
 
+GAP_STABLE_TICKS = 50  # 간격이 이 tick 수만큼 연속으로 충족돼야 DETACH (0.5초)
+
 class BranchCoordinator:
     def __init__(self, platoon, tm, tm_port, sim):
         self.platoon = platoon; self.tm = tm; self.tm_port = tm_port; self.sim = sim
@@ -130,6 +132,8 @@ class BranchCoordinator:
         self.triggered = False
         self.branched_v = None
         self._spawn_done = False
+        self._gap_ok_count = 0          # fix1: GAP 하이스테리시스 카운터
+        self._state_lock = threading.Lock()  # fix2: 스레드 경쟁 방지
 
     def trigger(self):
         if self.state == BranchState.CRUISE:
@@ -144,8 +148,13 @@ class BranchCoordinator:
         elif self.state == BranchState.GAP_OPEN:
             if len(self.platoon) >= 3:
                 gap = self.platoon[1].distance_to(self.platoon[2])
+                # fix1: 순간 초과가 아닌 GAP_STABLE_TICKS 연속 충족 시 전환
                 if gap >= OPEN_GAP_READY_M:
-                    print(f"[branch] 간격 {gap:.1f}m 확보 → DETACH")
+                    self._gap_ok_count += 1
+                else:
+                    self._gap_ok_count = 0
+                if self._gap_ok_count >= GAP_STABLE_TICKS:
+                    print(f"[branch] 간격 {gap:.1f}m 안정 확보 → DETACH")
                     self.state = BranchState.DETACH
 
         elif self.state == BranchState.DETACH:
@@ -166,7 +175,9 @@ class BranchCoordinator:
                     openai_api_key=os.environ.get("OPENAI_API_KEY",""),
                 )
                 r.replicate()
-                self.state = BranchState.DONE
+                # fix2: Lock으로 메인 루프와 경쟁 방지
+                with self._state_lock:
+                    self.state = BranchState.DONE
                 print("[branch] DONE — OpenClaw 복제 완료")
             threading.Thread(target=_spawn, daemon=True).start()
 
