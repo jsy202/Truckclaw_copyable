@@ -5,6 +5,7 @@
   "bot_display_name": "TRUCKCLAW3",
   "platoon_id": "platoon_truck3",
   "role": "solo",
+  "discord_channel_id": "1505104257634926602",
   "bridge": {
     "base_url": "http://127.0.0.1:18801",
     "cli": "/project/scripts/platoon_bridge_ctl.py"

@@ -44,5 +44,6 @@
     "tail_join_only": true,
     "max_concurrent": 1,
     "require_destination_match": true
-  }
+  },
+  "discord_channel_id": "1505104257634926602"
 }
