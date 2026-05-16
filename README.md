@@ -209,3 +209,112 @@ python3 scenario/examples/single_platoon_branch_scenario.py
 | 18801 | 브리지 서버 REST API |
 | 18789 | openclaw-truck1 gateway |
 | 18792 | openclaw-truck3 gateway (분기 후) |
+
+---
+
+## 기술적 상세
+
+### 알고리즘
+
+#### CACC (Cooperative Adaptive Cruise Control)
+
+팔로워 차량의 참조 속도 계산:
+
+```
+v_ref = v_lead + 0.55 × (gap - desired_gap) + 0.80 × (v_lead - v_ego)
+```
+
+| 항 | 역할 |
+|----|------|
+| `v_lead` | 선행차 속도 기준 |
+| `0.55 × (gap - desired_gap)` | 간격 피드백 — 간격이 부족하면 감속, 넓으면 가속 |
+| `0.80 × (v_lead - v_ego)` | 속도 차 피드백 — 선행차와 속도를 맞춤 |
+
+속도는 `[v_lead - 14 km/h, v_lead + 20 km/h]` 범위로 클리핑.
+
+#### GAP 하이스테리시스
+
+```
+단순 임계값: gap >= 18m → 즉시 DETACH  (순간 튐에 취약)
+개선 후:     gap >= 18m 을 50 tick (0.5초) 연속 유지 → DETACH
+```
+
+```python
+if gap >= OPEN_GAP_READY_M:
+    self._gap_ok_count += 1
+else:
+    self._gap_ok_count = 0          # 한 번이라도 미달이면 리셋
+if self._gap_ok_count >= 50:
+    self.state = BranchState.DETACH
+```
+
+---
+
+### 프롬프트 구조 (OpenClaw Agent)
+
+OpenClaw는 차량마다 아래 파일들을 system prompt처럼 읽고 행동합니다.
+
+```
+/data/openclaw/
+├── SOUL.md                          ← 성격·판단 기준 (system prompt 역할)
+├── AGENTS.md                        ← 신분·역할·제약
+├── TOOLS.md                         ← 사용 가능한 CLI 명령어
+├── skills/platoon-negotiator/
+│   └── SKILL.md                     ← 협상 7단계 절차서
+└── data/
+    ├── vehicle_destinations.json    ← 목적지 진실 소스
+    └── platoon_decision_context.json ← 브리지 URL·채널·멤버
+```
+
+**SOUL.md 핵심 구조:**
+```
+[정체성]  You are TRUCKCLAW3, solo vehicle in platoon_truck3.
+[진실]    vehicle_destinations.json만 신뢰. 브리지 snapshot으로 상태 확인.
+[말투]    짧고 사무적. 한국어 + 기계 필드는 영어.
+[역할]    Solo Navigator — dest_b로 단독 주행.
+[금지]    carla_complete 없이 "합류 완료" 금지.
+          platoon_a의 활성 transfer 참조 금지.
+```
+
+---
+
+### 하네스 구조
+
+```
+[시나리오 하네스 - single_platoon_branch_scenario.py]
+  ├── BranchCoordinator          ← 상태머신 (CRUISE/GAP/DETACH/SPAWN/DONE)
+  ├── ContainerMonitor           ← docker ps 폴링 (1초 주기, 백그라운드 스레드)
+  ├── KeyInput                   ← termios 기반 논블로킹 키 입력
+  └── SmoothCamera               ← CARLA spectator 부드러운 추적
+
+[복제 하네스 - replicator.py]
+  ├── create_image_bundle()      ← docker save → .tar (976MB)
+  ├── create_config_bundle()     ← 선택적 파일 패키징 → .tar.gz
+  ├── _v2v_transfer()            ← 64KB 청크 복사 (V2V 에뮬레이션)
+  └── _load_and_run()            ← docker load + tar 해제 + docker run
+
+[브리지 하네스 - platoon_bridge_server.py]
+  REST API: pending → accepted → committed → splitting → merging → carla_complete
+  포트: 18801
+
+[대화 가드 - platoon_dialogue_guard.py]
+  inbound gate: 자신에게 온 메시지인지 확인
+  validate-json: 목적지 일치 여부 검증
+  확인 전용 메시지 무시 (무한 응답 루프 방지)
+```
+
+---
+
+### 엔지니어링 결정 기록
+
+| 결정 | 이유 |
+|------|------|
+| 두 tar 번들 분리 | 이미지(런타임)와 설정(임무)을 명확히 구분. V2V 전송 현실성 |
+| SOUL.md만 patch, SKILL.md는 복사 | 협상 방법(HOW)은 보편적, 정체성(WHO)만 교체 |
+| AGENTS.md 재생성 | 6단계 협상 워크플로우가 truck_3 상황과 구조적으로 다름 |
+| destinations.json 재생성 | 원본 그대로면 truck_3이 platoon_a 소속인 줄 알고 오작동 |
+| Discord 토큰 복사 금지 | 동일 계정 동시 접속 → Discord 정책 위반 + 메시지 혼선 |
+| Docker 소켓 공유 (DinD MVP) | true DinD 대비 설정 간단, 기능 동일 |
+| 포트 18792 고정 (truck3) | truck1의 18789와 충돌 방지 |
+| GAP 50 tick 하이스테리시스 | 0.5초 안정 확인으로 진동에 의한 조기 분리 방지 |
+| threading.Lock on state write | SPAWN_OC 스레드와 메인 루프 경쟁 조건 방지 |
