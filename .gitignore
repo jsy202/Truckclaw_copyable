@@ -26,3 +26,8 @@ venv/
 .vscode/
 .idea/
 *.swp
+
+.openclaw-truck3/
+.openclaw-truck1/
+.transfer/
+.env.single-platoon

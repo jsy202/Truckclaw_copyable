@@ -1,42 +1,26 @@
 """
-Single-Platoon Branch Scenario
-================================
-3대 단일 군집 주행 중 truck_3의 목적지가 변경되면 분기하는 시나리오.
+Single-Platoon Branch Scenario  —  CARLA 완전 구현
+========================================================
+3대 단일 군집 주행 중 truck_3 분기 시나리오.
+CARLA 설치 시 바로 실행 가능. 없으면 ImportError.
 
-차량 구성:
-  truck_1 (index 0) : leader, OpenClaw 실행 중 (openclaw-truck1)
-  truck_2 (index 1) : follower, OpenClaw 없음
-  truck_3 (index 2) : follower → 분기 시 단독 운행 + 새 OpenClaw 실행
-
-분기 흐름:
-  CRUISE → GAP_OPEN → DETACH → SPAWN_OC → DONE
-  (기존 two_platoon_truck_scenario.py의 splitting/merging 로직 참조)
-
-재사용 컴포넌트:
-  - PlatooningSimulator/Core.py       : Platoon, Vehicle, Simulation
-  - PlatooningSimulator/PlatooningControllers.py : LeadNavigator, FollowerController
-  - config/simulation.json            : 속도/간격 파라미터
-  - openclaw_migration/replicator.py  : OpenClaw 복제 및 컨테이너 실행
-
-CARLA 경로: /opt/carla-0.9.6
 키 입력:
   '3' : truck_3 분기 수동 트리거
+  'r' : 시나리오 리셋 (초기 3대 군집으로 복귀)
   Ctrl-C : 종료
-"""
 
+터미널 출력:
+  - CARLA 물리 상태 (속도, 간격, 상태머신)
+  - [vehicle-truck1] / [vehicle-truck3] 컨테이너 목록 (실시간)
+"""
 from __future__ import annotations
 
-import glob
-import json
-import os
-import select
-import sys
-import termios
-import tty
+import glob, json, os, select, sys, termios, threading, tty, time
 from collections import deque
 from enum import Enum, auto
+from pathlib import Path
 
-# ── CARLA 경로 설정 ─────────────────────────────────────────────────────────
+# CARLA 경로
 try:
     sys.path.append(glob.glob(
         '/opt/carla-0.9.6/PythonAPI/carla/dist/carla-*%d.%d-%s.egg' % (
@@ -51,425 +35,268 @@ import carla
 import numpy as np
 from agents.navigation import controller as nav_controller
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+_PROJECT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(_PROJECT))
+sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
+
 from PlatooningSimulator import Core, PlatooningControllers
+from openclaw_migration.replicator import Replicator
+from openclaw_migration.monitor    import ContainerMonitor
+from openclaw_migration.reset      import reset as do_reset
 
-# ── 설정 로드 ────────────────────────────────────────────────────────────────
-CONFIG_FILE = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'config', 'simulation.json'
-)
-
-def _load_config() -> dict:
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE) as f:
-            return json.load(f)
+# ── 설정 ────────────────────────────────────────────────────────────────────
+_CFG_PATH = _PROJECT / "config" / "simulation.json"
+def _cfg():
+    if _CFG_PATH.exists():
+        return json.loads(_CFG_PATH.read_text())
     return {}
+_c = _cfg(); _spd = _c.get("speeds",{}); _gap = _c.get("gaps",{}); _sp = _c.get("spawns",{})
 
-_cfg    = _load_config()
-_speeds = _cfg.get('speeds', {})
-_gaps   = _cfg.get('gaps', {})
-_spawns = _cfg.get('spawns', {})
+DT             = 0.01
+SAMPLING_RATE  = 10
+PLATOON_SIZE   = 3
+PLATOON_SPACING_M   = float(_gap.get("platoon_spacing_m",   18.0))
+NORMAL_FOLLOW_GAP_M = float(_gap.get("normal_follow_gap_m", 12.0))
+OPEN_GAP_M          = float(_gap.get("open_gap_m",          20.0))
+OPEN_GAP_READY_M    = float(_gap.get("open_gap_ready_m",    18.0))
+SYNC_SPEED_KMH      = float(_spd.get("sync_speed_kmh",      18.0))
+BRANCH_AUTO_S       = 30.0   # 자동 분기 트리거 (초)
 
-DT              = 0.01
-SAMPLING_RATE   = 10
-PLATOON_SIZE    = 3
-
-PLATOON_SPACING_M  = float(_gaps.get('platoon_spacing_m', 18.0))
-NORMAL_FOLLOW_GAP_M= float(_gaps.get('normal_follow_gap_m', 12.0))
-OPEN_GAP_M         = float(_gaps.get('open_gap_m', 20.0))
-OPEN_GAP_READY_M   = float(_gaps.get('open_gap_ready_m', 18.0))
-SYNC_SPEED_KMH     = float(_speeds.get('sync_speed_kmh', 18.0))
-
-# 자동 분기 트리거 시간 (초). 0 이하면 수동(키보드)만.
-BRANCH_AUTO_TRIGGER_S = 30.0
-
-# ── 스폰 위치 (p1_spawn 재사용) ──────────────────────────────────────────────
-_s = _spawns.get('p1_spawn', {
-    'x': 81.0, 'y': 136.0, 'z': 0.3,
-    'pitch': 0.0, 'yaw': 0.2, 'roll': 0.0,
-})
+_s = _sp.get("p1_spawn", {"x":81.0,"y":136.0,"z":0.3,"pitch":0.0,"yaw":0.2,"roll":0.0})
 PLATOON_SPAWN = carla.Transform(
-    carla.Location(x=_s['x'], y=_s['y'], z=_s['z']),
-    carla.Rotation(pitch=_s['pitch'], yaw=_s['yaw'], roll=_s['roll']),
+    carla.Location(x=_s["x"], y=_s["y"], z=_s["z"]),
+    carla.Rotation(pitch=_s["pitch"], yaw=_s["yaw"], roll=_s["roll"]),
 )
+BRIDGE_URL = "http://127.0.0.1:18801"
 
-# ── OpenClaw 복제기 경로 ─────────────────────────────────────────────────────
-_PROJECT_ROOT = os.path.join(os.path.dirname(__file__), '..', '..')
-sys.path.insert(0, _PROJECT_ROOT)
-
-# ── 공통 헬퍼 (기존 two_platoon_truck_scenario.py 에서 재사용) ───────────────
-
-def _yaw_diff(yaw_a: float, yaw_ref: float) -> float:
-    return abs((yaw_a - yaw_ref + 180.0) % 360.0 - 180.0)
-
-
-def _select_straight_waypoint(candidates, yaw_ref):
-    if not candidates:
-        return None
-    return min(candidates, key=lambda w: _yaw_diff(w.transform.rotation.yaw, yaw_ref))
-
-
-def _retreat_waypoint(wpt, distance_m: float):
-    curr = wpt
-    rem = float(distance_m)
-    while rem > 0.0:
-        step = min(10.0, rem)
-        nxt = curr.previous(step)
-        if not nxt:
-            return None
-        curr = _select_straight_waypoint(nxt, curr.transform.rotation.yaw)
-        rem -= step
-    return curr
-
-
-def _spawn_from_waypoint(wpt):
-    t = wpt.transform
-    return carla.Transform(
-        carla.Location(x=t.location.x, y=t.location.y, z=t.location.z + 0.3),
-        t.rotation,
-    )
-
-
-def _set_follow_gap(vehicle, gap_m: float) -> None:
-    vehicle.desired_gap_m = float(gap_m)
-
-
-def v_ref_cacc(pre, ego) -> float:
-    """CACC 기반 참조 속도 계산 — 기존 로직 재사용."""
-    gap = ego.distance_to(pre)
-    vp  = pre.speed
-    ve  = ego.speed
-    desired_gap = getattr(ego, 'desired_gap_m', NORMAL_FOLLOW_GAP_M)
-    gap_err = gap - desired_gap
-    v_ref_mps = vp + 0.55 * gap_err + 0.80 * (vp - ve)
-    v_ref_kmh = v_ref_mps * 3.6
-    return float(np.clip(v_ref_kmh, max(5.0, vp * 3.6 - 14.0), vp * 3.6 + 20.0))
-
-
-def compute_lead_route(cmap, start_location, distance_m: float = 3000.0, step_m: float = 5.0):
-    """리더 차량의 직진 경로 사전 계산 — 기존 로직 재사용."""
+# ── 공통 헬퍼 ───────────────────────────────────────────────────────────────
+def _yaw_diff(a, ref): return abs((a - ref + 180.0) % 360.0 - 180.0)
+def _straight(cands, yaw): return min(cands, key=lambda w: _yaw_diff(w.transform.rotation.yaw, yaw)) if cands else None
+def _retreat(wpt, dist):
+    cur, rem = wpt, float(dist)
+    while rem > 0:
+        step = min(10.0, rem); nxt = cur.previous(step)
+        if not nxt: return None
+        cur = _straight(nxt, cur.transform.rotation.yaw); rem -= step
+    return cur
+def _spawn_from_wpt(w):
+    t = w.transform
+    return carla.Transform(carla.Location(x=t.location.x, y=t.location.y, z=t.location.z+0.3), t.rotation)
+def _set_gap(v, g): v.desired_gap_m = float(g)
+def v_ref_cacc(pre, ego):
+    gap = ego.distance_to(pre); vp = pre.speed; ve = ego.speed
+    desired = getattr(ego, "desired_gap_m", NORMAL_FOLLOW_GAP_M)
+    v = vp + 0.55*(gap-desired) + 0.80*(vp-ve)
+    return float(np.clip(v*3.6, max(5.0, vp*3.6-14.0), vp*3.6+20.0))
+def compute_lead_route(cmap, loc, dist=3000.0, step=5.0):
     route = deque()
-    curr = cmap.get_waypoint(start_location, project_to_road=True,
-                             lane_type=carla.LaneType.Driving)
-    if curr is None:
-        return route
-    route.append(curr)
-    remaining = float(distance_m)
-    while remaining > 0.0:
-        nxt = curr.next(min(step_m, remaining))
-        if not nxt:
-            break
-        curr = _select_straight_waypoint(nxt, curr.transform.rotation.yaw)
-        route.append(curr)
-        remaining -= step_m
+    cur = cmap.get_waypoint(loc, project_to_road=True, lane_type=carla.LaneType.Driving)
+    if not cur: return route
+    route.append(cur); rem = dist
+    while rem > 0:
+        nxt = cur.next(min(step, rem))
+        if not nxt: break
+        cur = _straight(nxt, cur.transform.rotation.yaw); route.append(cur); rem -= step
     return route
 
-
 # ── 군집 빌드 ────────────────────────────────────────────────────────────────
-
-def build_single_platoon(
-    sim: Core.Simulation,
-    blueprint,
-    spawn: carla.Transform,
-    speed: float,
-    tm,
-    tm_port: int,
-) -> Core.Platoon:
-    """3대 단일 군집을 스폰하고 반환한다."""
+def build_platoon(sim, bp, spawn, speed, tm, tm_port):
     p = Core.Platoon(sim)
-    lead = p.add_lead_vehicle(blueprint, spawn)
-    sim.tick()
-    lead.attach_controller(
-        PlatooningControllers.LeadNavigator(lead, initial_speed=speed)
-    )
-
-    anchor = lead
-    awpt = sim.map.get_waypoint(spawn.location)
+    lead = p.add_lead_vehicle(bp, spawn); sim.tick()
+    lead.attach_controller(PlatooningControllers.LeadNavigator(lead, initial_speed=speed))
+    anchor = lead; awpt = sim.map.get_waypoint(spawn.location)
     for _ in range(PLATOON_SIZE - 1):
-        fwpt = _retreat_waypoint(awpt, PLATOON_SPACING_M)
-        f_sp = _spawn_from_waypoint(fwpt) if fwpt else anchor.transform_ahead(-PLATOON_SPACING_M)
-        f = p.add_follower_vehicle(blueprint, f_sp)
-        _set_follow_gap(f, NORMAL_FOLLOW_GAP_M)
-        f.attach_controller(
-            PlatooningControllers.FollowerController(f, v_ref_cacc, p, dependencies=[-1, 0])
-        )
-        sim.tick()
-        anchor = f
-        awpt   = fwpt or awpt
-
+        fwpt = _retreat(awpt, PLATOON_SPACING_M)
+        fsp  = _spawn_from_wpt(fwpt) if fwpt else anchor.transform_ahead(-PLATOON_SPACING_M)
+        f = p.add_follower_vehicle(bp, fsp); _set_gap(f, NORMAL_FOLLOW_GAP_M)
+        f.attach_controller(PlatooningControllers.FollowerController(f, v_ref_cacc, p, dependencies=[-1,0]))
+        sim.tick(); anchor = f; awpt = fwpt or awpt
     p.store_follower_waypoints()
     p.lead_waypoints.append(sim.map.get_waypoint(lead.get_location()))
     return p
 
-
 # ── 상태 머신 ────────────────────────────────────────────────────────────────
-
 class BranchState(Enum):
-    CRUISE   = auto()   # 정상 군집 주행
-    GAP_OPEN = auto()   # truck_3 후방 간격 확보 중
-    DETACH   = auto()   # truck_3 분리
-    SPAWN_OC = auto()   # truck_3 OpenClaw 컨테이너 실행
-    DONE     = auto()   # 완료 (truck_1+2 계속, truck_3 단독)
-
+    CRUISE   = auto()
+    GAP_OPEN = auto()
+    DETACH   = auto()
+    SPAWN_OC = auto()
+    DONE     = auto()
 
 class BranchCoordinator:
-    """
-    3대 단일 군집에서 truck_3(index 2)을 분기시키는 코디네이터.
+    def __init__(self, platoon, tm, tm_port, sim):
+        self.platoon = platoon; self.tm = tm; self.tm_port = tm_port; self.sim = sim
+        self.state = BranchState.CRUISE
+        self.triggered = False
+        self.branched_v = None
+        self._spawn_done = False
 
-    분기 트리거: 수동('3' 키) 또는 자동(BRANCH_AUTO_TRIGGER_S 초 경과)
-    OpenClaw 복제: Replicator.replicate() 호출
-    """
-
-    def __init__(self, platoon: Core.Platoon, tm, tm_port: int) -> None:
-        self.platoon    = platoon
-        self.tm         = tm
-        self.tm_port    = tm_port
-        self.state      = BranchState.CRUISE
-        self.triggered  = False
-        self.branched_v = None   # 분기된 truck_3 Vehicle 인스턴스
-
-    def trigger(self) -> None:
-        """분기 트리거 (외부에서 호출)."""
+    def trigger(self):
         if self.state == BranchState.CRUISE:
             self.triggered = True
 
-    def update(self, step: int) -> None:
-        if self.state == BranchState.CRUISE:
-            self._handle_cruise()
+    def update(self, step):
+        if self.state == BranchState.CRUISE and self.triggered:
+            print(f"\n[branch] 목적지 변경 감지 → GAP_OPEN (t={step*DT:.1f}s)")
+            _set_gap(self.platoon[2], OPEN_GAP_M)
+            self.state = BranchState.GAP_OPEN
+
         elif self.state == BranchState.GAP_OPEN:
-            self._handle_gap_open()
+            if len(self.platoon) >= 3:
+                gap = self.platoon[1].distance_to(self.platoon[2])
+                if gap >= OPEN_GAP_READY_M:
+                    print(f"[branch] 간격 {gap:.1f}m 확보 → DETACH")
+                    self.state = BranchState.DETACH
+
         elif self.state == BranchState.DETACH:
-            self._handle_detach()
-        elif self.state == BranchState.SPAWN_OC:
-            self._handle_spawn_oc()
-        # DONE: no-op
-
-    def _handle_cruise(self) -> None:
-        if not self.triggered:
-            return
-        print("[branch] 트리거 확인 → GAP_OPEN 진입")
-        print(f"[branch] truck_3 목적지 변경 감지: dest_a → dest_b")
-        # truck_3(index 2)의 follow gap을 크게 설정해 후방 간격 확보
-        _set_follow_gap(self.platoon[2], OPEN_GAP_M)
-        self.state = BranchState.GAP_OPEN
-
-    def _handle_gap_open(self) -> None:
-        if len(self.platoon) < 3:
-            # 이미 분리된 경우
-            self.state = BranchState.DETACH
-            return
-        gap = self.platoon[1].distance_to(self.platoon[2])
-        if gap >= OPEN_GAP_READY_M:
-            print(f"[branch] 간격 확보 완료: {gap:.1f}m ≥ {OPEN_GAP_READY_M}m → DETACH")
-            self.state = BranchState.DETACH
-        else:
-            pass  # 다음 tick에 재확인
-
-    def _handle_detach(self) -> None:
-        """
-        Core.Platoon.split()으로 truck_3을 분리한다.
-        분리 후 truck_3은 자신의 LeadNavigator로 계속 주행하거나
-        autopilot 으로 전환된다.
-        """
-        print("[branch] DETACH: truck_3 분리 시작")
-        try:
-            # split(first=2, last=2) → truck_3만 new_platoon으로 분리
             new_p, _ = self.platoon.split(2, 2)
             self.branched_v = new_p[0]
-
-            # truck_3을 autopilot으로 전환 (독립 주행)
-            # TrafficManager가 관리하므로 LeadNavigator 없이도 안전하게 주행
             self.branched_v.set_autopilot(True, self.tm_port)
+            print(f"[branch] truck_3 분리 완료 — 단독 autopilot 주행")
+            print(f"[branch] 남은 군집: {len(self.platoon)}대")
+            self._post_bridge("/reload", {})
+            self.state = BranchState.SPAWN_OC
 
-            print(f"[branch] truck_3 분리 완료 — 독립 운행 시작 (autopilot)")
-            print(f"[branch] 남은 군집: truck_1 + truck_2 ({len(self.platoon)}대)")
-        except Exception as exc:
-            print(f"[branch] DETACH 오류: {exc}")
+        elif self.state == BranchState.SPAWN_OC and not self._spawn_done:
+            self._spawn_done = True
+            def _spawn():
+                r = Replicator(
+                    discord_token=os.environ.get("TRUCK3_DISCORD_BOT_TOKEN",""),
+                    gateway_token=os.environ.get("TRUCK3_OPENCLAW_GATEWAY_TOKEN",""),
+                    openai_api_key=os.environ.get("OPENAI_API_KEY",""),
+                )
+                r.replicate()
+                self.state = BranchState.DONE
+                print("[branch] DONE — OpenClaw 복제 완료")
+            threading.Thread(target=_spawn, daemon=True).start()
 
-        self.state = BranchState.SPAWN_OC
-
-    def _handle_spawn_oc(self) -> None:
-        """truck_1의 OpenClaw 환경을 truck_3으로 복제하고 컨테이너를 실행한다."""
-        print("[branch] SPAWN_OC: OpenClaw 복제 시작")
+    def _post_bridge(self, path, body):
+        import urllib.request
         try:
-            from openclaw_migration.replicator import Replicator
+            req = urllib.request.Request(
+                f"{BRIDGE_URL}{path}",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type":"application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=1)
+        except Exception: pass
 
-            r = Replicator(
-                # truck_1의 행동 DNA 소스: 기존 platoon-a agent 템플릿
-                truck1_agent_dir=os.path.join(_PROJECT_ROOT, 'agents', 'platoon-a'),
-                # truck_3 전용 정체성 템플릿
-                truck3_template_dir=os.path.join(_PROJECT_ROOT, 'agents', 'truck3'),
-                # truck_3의 OpenClaw 런타임 데이터 디렉터리
-                dst_dir=os.path.join(_PROJECT_ROOT, '.openclaw-truck3'),
-                container_name='openclaw-truck3',
-                port=18792,
-            )
-
-            # 환경변수는 .env 또는 실행 환경에서 주입
-            env_vars = {
-                k: os.environ[k]
-                for k in ('TRUCK3_DISCORD_BOT_TOKEN', 'TRUCK3_OPENCLAW_GATEWAY_TOKEN')
-                if k in os.environ
-            }
-
-            r.replicate(env_vars or None)
-
-        except ImportError as exc:
-            print(f"[branch] replicator import 실패: {exc}")
-        except Exception as exc:
-            print(f"[branch] OpenClaw 복제 오류: {exc}")
-
-        self.state = BranchState.DONE
-        print("[branch] DONE: truck_3 분기 완료")
-        print("  - truck_1 + truck_2: 군집 계속 주행")
-        print("  - truck_3: 단독 주행 + OpenClaw 실행 (openclaw-truck3)")
-
-    def status_line(self) -> str:
+    def status_line(self):
         if self.state == BranchState.GAP_OPEN and len(self.platoon) >= 3:
-            gap = self.platoon[1].distance_to(self.platoon[2])
-            return f"GAP_OPEN gap={gap:.1f}m / 목표={OPEN_GAP_READY_M}m"
+            return f"GAP_OPEN {self.platoon[1].distance_to(self.platoon[2]):.1f}/{OPEN_GAP_READY_M}m"
         return self.state.name
 
+    def reset_carla(self):
+        """CARLA actor 제거 후 재스폰"""
+        for v in list(self.platoon):
+            try: v._carla_vehicle.destroy()
+            except Exception: pass
+        if self.branched_v:
+            try: self.branched_v._carla_vehicle.destroy()
+            except Exception: pass
+        self.state = BranchState.CRUISE; self.triggered = False
+        self.branched_v = None; self._spawn_done = False
+        print("[reset] CARLA actor 제거 완료")
 
-# ── 키 입력 (기존 코드 재사용) ───────────────────────────────────────────────
-
+# ── 키 입력 ──────────────────────────────────────────────────────────────────
 class KeyInput:
-    def __init__(self) -> None:
+    def __init__(self):
         self._active = False
         try:
-            self._fd  = sys.stdin.fileno()
-            self._old = termios.tcgetattr(self._fd)
-            tty.setcbreak(self._fd)
-            self._active = True
-            print("[keys] '3' = truck_3 분기 트리거   Ctrl-C = 종료")
+            self._fd = sys.stdin.fileno(); self._old = termios.tcgetattr(self._fd)
+            tty.setcbreak(self._fd); self._active = True
+            print("[keys] '3'=분기트리거  'r'=리셋  Ctrl-C=종료")
         except termios.error:
-            print("[keys] TTY 없음 — 키보드 트리거 비활성화 (자동 트리거만 사용)")
-
-    def read(self) -> str:
-        if not self._active:
-            return ''
-        if select.select([sys.stdin], [], [], 0)[0]:
+            print("[keys] TTY 없음")
+    def read(self):
+        if not self._active: return ""
+        if select.select([sys.stdin],[],[],0)[0]:
             ch = sys.stdin.read(1)
-            if ch == '\x03':
-                self.restore()
-                raise KeyboardInterrupt
+            if ch == "\x03": self.restore(); raise KeyboardInterrupt
             return ch
-        return ''
-
-    def restore(self) -> None:
-        if self._active:
-            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
-            self._active = False
-
-
-# ── 카메라 ───────────────────────────────────────────────────────────────────
+        return ""
+    def restore(self):
+        if self._active: termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old); self._active = False
 
 class SmoothCamera:
-    def __init__(self, spectator) -> None:
-        self.s = spectator
-        self.x = self.y = None
-
-    def update(self, target) -> None:
-        loc = target.get_location()
-        if self.x is None:
-            self.x, self.y = loc.x, loc.y
-        self.x += 0.05 * (loc.x - self.x)
-        self.y += 0.05 * (loc.y - self.y)
+    def __init__(self, s): self.s=s; self.x=self.y=None
+    def update(self, t):
+        loc = t.get_location()
+        if self.x is None: self.x,self.y=loc.x,loc.y
+        self.x+=0.05*(loc.x-self.x); self.y+=0.05*(loc.y-self.y)
         self.s.set_transform(carla.Transform(
-            carla.Location(x=self.x, y=self.y, z=loc.z + 85),
-            carla.Rotation(pitch=-90),
-        ))
-
+            carla.Location(x=self.x,y=self.y,z=loc.z+85), carla.Rotation(pitch=-90)))
 
 # ── 메인 ─────────────────────────────────────────────────────────────────────
+def main():
+    # .env 로드
+    env_file = _PROJECT / ".env.single-platoon"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("="); os.environ.setdefault(k.strip(), v.strip())
 
-def platoon_gaps(platoon: Core.Platoon) -> str:
-    vehicles = list(platoon)
-    if len(vehicles) < 2:
-        return '-'
-    return ', '.join(
-        f'{vehicles[i].distance_to(vehicles[i+1]):.1f}m'
-        for i in range(len(vehicles) - 1)
-    )
+    # 컨테이너 모니터 시작
+    monitor = ContainerMonitor()
 
-
-def platoon_speeds(platoon: Core.Platoon) -> str:
-    return ', '.join(f'{v.speed * 3.6:.1f}' for v in platoon)
-
-
-def main() -> None:
-    sim  = Core.Simulation(world='Town06', dt=DT, synchronous=True)
+    sim  = Core.Simulation(world="Town06", dt=DT, synchronous=True)
     cmap = sim.map
     bps  = sim.get_vehicle_blueprints()
-    bp   = bps.filter('vehicle.carlamotors.european_hgv')[0]
-    tm   = sim.get_trafficmanager()
-    tm.set_synchronous_mode(True)
-    tm_port = tm.get_port()
+    bp   = bps.filter("vehicle.carlamotors.european_hgv")[0]
+    tm   = sim.get_trafficmanager(); tm.set_synchronous_mode(True); tm_port = tm.get_port()
 
-    platoon = build_single_platoon(sim, bp, PLATOON_SPAWN, SYNC_SPEED_KMH, tm, tm_port)
-    platoon[0].controller.waypoints_ahead = compute_lead_route(
-        cmap, platoon[0].get_location()
-    )
+    platoon = build_platoon(sim, bp, PLATOON_SPAWN, SYNC_SPEED_KMH, tm, tm_port)
+    platoon[0].controller.waypoints_ahead = compute_lead_route(cmap, platoon[0].get_location())
 
-    coord  = BranchCoordinator(platoon, tm, tm_port)
+    coord  = BranchCoordinator(platoon, tm, tm_port, sim)
     kb     = KeyInput()
     camera = SmoothCamera(sim.spectator)
     step   = 0
 
-    print(f"[scenario] 단일 군집 3대 주행 시작")
-    print(f"[scenario] truck_1=리더, truck_2=팔로워, truck_3=팔로워(분기 대상)")
-    print(f"[scenario] 자동 분기 트리거: {BRANCH_AUTO_TRIGGER_S}초 후")
+    print(f"\n[scenario] 단일 군집 3대 주행 시작")
+    print(f"[scenario] 자동 분기: {BRANCH_AUTO_S}초 후\n")
 
     try:
         while True:
             elapsed = step * DT
+            if elapsed > 600.0: break
 
-            # 600초 제한
-            if elapsed > 600.0:
-                print("[scenario] 600초 경과 — 시나리오 종료")
-                break
-
-            # 키 입력 처리
             key = kb.read()
-            if key == '3':
-                print(f"[key] '3' 입력 — truck_3 분기 수동 트리거 (t={elapsed:.1f}s)")
+            if key == "3":
+                print(f"\n[key] 수동 분기 트리거 (t={elapsed:.1f}s)")
                 coord.trigger()
+            elif key == "r":
+                print(f"\n[key] 리셋 요청 (t={elapsed:.1f}s)")
+                do_reset(carla_coordinator=coord)
+                # 재스폰
+                platoon = build_platoon(sim, bp, PLATOON_SPAWN, SYNC_SPEED_KMH, tm, tm_port)
+                platoon[0].controller.waypoints_ahead = compute_lead_route(cmap, platoon[0].get_location())
+                coord = BranchCoordinator(platoon, tm, tm_port, sim)
+                step = 0; continue
 
             # 자동 트리거
-            if (BRANCH_AUTO_TRIGGER_S > 0
-                    and elapsed >= BRANCH_AUTO_TRIGGER_S
-                    and coord.state == BranchState.CRUISE):
-                print(f"[auto] t={elapsed:.1f}s — truck_3 목적지 변경 감지, 자동 분기 트리거")
+            if BRANCH_AUTO_S > 0 and elapsed >= BRANCH_AUTO_S and coord.state == BranchState.CRUISE:
+                print(f"\n[auto] t={elapsed:.1f}s 자동 분기 트리거")
                 coord.trigger()
 
             coord.update(step)
-
-            sim.run_step(mode='sample' if step % SAMPLING_RATE == 0 else 'control')
+            sim.run_step(mode="sample" if step % SAMPLING_RATE == 0 else "control")
             sim.tick()
+            camera.update(platoon[0]._carla_vehicle)
 
-            # 카메라: 분기 후에는 truck_1(리더) 추적
-            camera_target = (
-                platoon[0]._carla_vehicle
-                if coord.branched_v is None
-                else platoon[0]._carla_vehicle
-            )
-            camera.update(camera_target)
-
-            # 100 tick 마다 상태 출력
+            # 100 tick 마다 상태 출력 + 컨테이너 목록
             if step % 100 == 0:
-                print(
-                    f"t={elapsed:6.1f}s "
-                    f"속도=({platoon_speeds(platoon)}) km/h "
-                    f"간격=({platoon_gaps(platoon)}) "
-                    f"state={coord.status_line()}"
-                )
+                speeds = ",".join(f"{v.speed*3.6:4.1f}" for v in platoon)
+                gaps   = ",".join(f"{platoon[i].distance_to(platoon[i+1]):4.1f}"
+                                  for i in range(len(platoon)-1)) or "-"
+                print(f"\nt={elapsed:6.1f}s  속도=({speeds}) km/h  간격=({gaps})m  state={coord.status_line()}")
+                for line in monitor.display_lines():
+                    print(line)
 
             step += 1
-
     finally:
         kb.restore()
         sim.release_synchronous()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
