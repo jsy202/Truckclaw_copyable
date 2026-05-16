@@ -12,6 +12,20 @@ from pathlib import Path
 
 PROJECT_ROOT   = Path(__file__).parent.parent
 BRIDGE_DIR     = str(PROJECT_ROOT / "bridge")
+
+# .env.single-platoon 자동 로드
+def _load_env():
+    for name in [".env.single-platoon", ".env"]:
+        p = PROJECT_ROOT / name
+        if p.exists():
+            for line in p.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+            break
+_load_env()
+
 OPENCLAW_IMAGE = os.environ.get("OPENCLAW_IMAGE", "openclaw:local")
 CHUNK_SIZE     = 64 * 1024
 
@@ -158,7 +172,7 @@ class Replicator:
             tar.extractall(str(self.openclaw_data_dir))
         print(f"  config 압축 해제 → {self.openclaw_data_dir}")
 
-        # openclaw-truck3 실행
+        # openclaw-truck3 실행 (포트 18792 — truck1의 18789와 충돌 방지)
         subprocess.run(["docker", "rm", "-f", "openclaw-truck3"], capture_output=True)
         cmd = [
             "docker", "run", "-d",
@@ -168,6 +182,7 @@ class Replicator:
             "-e", f"DISCORD_BOT_TOKEN={self.discord_token}",
             "-e", f"OPENCLAW_GATEWAY_TOKEN={self.gateway_token}",
             "-e", f"OPENAI_API_KEY={self.openai_api_key}",
+            "-e", "OPENCLAW_GATEWAY_PORT=18792",
             "-v", f"{self.openclaw_data_dir.resolve()}:/data/openclaw",
             "-v", f"{BRIDGE_DIR}:/project/scripts:ro",
             OPENCLAW_IMAGE,

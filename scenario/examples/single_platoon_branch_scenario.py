@@ -239,7 +239,7 @@ def main():
     # 컨테이너 모니터 시작
     monitor = ContainerMonitor()
 
-    sim  = Core.Simulation(world="Town06", dt=DT, synchronous=True)
+    sim  = Core.Simulation(world="Town06", dt=DT, synchronous=True, render=False)
     cmap = sim.map
     bps  = sim.get_vehicle_blueprints()
     bp   = bps.filter("vehicle.carlamotors.european_hgv")[0]
