@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "map": "Town06",
+  "bot_name": "openclaw-truck3",
+  "bot_display_name": "TRUCKCLAW3",
+  "platoon_id": "platoon_truck3",
+  "role": "solo",
+  "bridge": {
+    "base_url": "http://127.0.0.1:18801",
+    "cli": "/project/scripts/platoon_bridge_ctl.py"
+  },
+  "destination_file": "/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json",
+  "own_platoon": {
+    "platoon_id": "platoon_truck3",
+    "leader_vehicle_id": "truck_3",
+    "ordered_members": [
+      "truck_3"
+    ]
+  },
+  "branched_from": {
+    "platoon_id": "platoon_a",
+    "original_vehicle_id": "platoon_a_truck2",
+    "original_index": 2,
+    "reason": "destination_mismatch",
+    "original_destination": "dest_a",
+    "new_destination": "dest_b"
+  },
+  "transfer_rules": {
+    "match_mode": "destination_match",
+    "target_position": "tail",
+    "max_concurrent": 1
+  },
+  "decision_policy": {
+    "never_transfer_leader": false,
+    "tail_join_only": true,
+    "max_concurrent": 1,
+    "require_destination_match": true
+  }
+}

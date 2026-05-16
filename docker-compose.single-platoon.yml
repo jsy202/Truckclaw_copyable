@@ -1,0 +1,73 @@
+# docker-compose.single-platoon.yml
+#
+# 단일 군집 분기 시나리오용 Docker Compose
+#
+# Docker-in-Docker 개념 구현 (MVP 에뮬레이션):
+#   실제 구조: Host → Vehicle Docker → OpenClaw Docker
+#   MVP 구조:  Host 디렉터리 = Vehicle Docker 역할
+#              호스트에서 직접 docker run = Vehicle Docker 내부 DinD 역할
+#
+# 컨테이너 구성:
+#   sp-bridge-server   : 기존 브리지 서버 재사용 (상태 관리 REST API)
+#   openclaw-truck1    : truck_1의 OpenClaw (항상 실행 중)
+#   openclaw-truck2    : 미정의 — truck_2에는 OpenClaw 없음
+#   openclaw-truck3    : truck_3 분기 시 replicator.py가 동적으로 실행
+#                        (이 파일에 정의하지 않음)
+#
+# 환경변수: .env.single-platoon 파일 사용
+#   cp .env.example .env.single-platoon 후 토큰 입력
+
+services:
+
+  # ── 브리지 서버: 기존 코드 재사용 ────────────────────────────────────────
+  sp-bridge-server:
+    image: python:3.10-slim
+    container_name: sp-bridge-server
+    volumes:
+      - ./bridge:/bridge:ro
+      - ./platoon_destinations.json:/platoon_destinations.json:ro
+    environment:
+      PLATOON_DESTINATIONS_PATH: /platoon_destinations.json
+    command: python3 /bridge/platoon_bridge_server.py
+    network_mode: host
+    restart: unless-stopped
+
+  # ── truck_1 OpenClaw: 항상 실행 중 ─────────────────────────────────────────
+  # truck_3 분기 후에도 중지하지 않음
+  openclaw-truck1:
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    container_name: openclaw-truck1
+    environment:
+      HOME: /data/openclaw
+      DISCORD_BOT_TOKEN: ${TRUCK1_DISCORD_BOT_TOKEN}
+      OPENCLAW_GATEWAY_TOKEN: ${TRUCK1_OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      # truck_1의 Vehicle Docker 역할 디렉터리 → /data/openclaw 마운트
+      - ${TRUCK1_CONFIG_DIR:-./.openclaw-truck1}:/data/openclaw
+      # 브리지 CLI 스크립트 공유
+      - ./bridge:/project/scripts:ro
+      - ./platoon_destinations.json:/project/platoon_destinations.json:ro
+      # agents/platoon-a 의 agent 정의 파일들도 공유
+      - ./agents/platoon-a:/data/openclaw/agent-config:ro
+    ports:
+      - "18791:18789"
+    restart: unless-stopped
+
+  # ── truck_2: OpenClaw 없음 (의도적) ─────────────────────────────────────
+  # truck_2는 순수 CACC 팔로워. AI 에이전트 불필요.
+  # (no openclaw-truck2 service)
+
+  # ── truck_3: 동적 실행 (docker-compose 미포함) ──────────────────────────
+  # openclaw_migration/replicator.py 가 truck_3 분기 시 자동으로 실행:
+  #
+  #   docker run -d \
+  #     --name openclaw-truck3 \
+  #     --network host \
+  #     -e HOME=/data/openclaw \
+  #     -v $(pwd)/.openclaw-truck3:/data/openclaw \
+  #     -v $(pwd)/bridge:/project/scripts:ro \
+  #     ${OPENCLAW_IMAGE:-openclaw:local}
+  #
+  # 수동 확인:
+  #   python3 openclaw_migration/replicator.py --dry-run
+  #   python3 openclaw_migration/replicator.py

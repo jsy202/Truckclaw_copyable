@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "map": "Town06",
+  "_note": "truck_3 단독 운행 설정. 분기 시점에 replicator가 이 파일을 truck_3 런타임 디렉터리에 복원함.",
+  "destination_points": {
+    "dest_b": {
+      "label": "Lower Side Road",
+      "description": "road=1083 lane=-4, lower right side-road branch",
+      "location": {
+        "x": 480.3,
+        "y": 41.7,
+        "z": 0.0
+      }
+    }
+  },
+  "platoons": {
+    "platoon_truck3": {
+      "destination_id": "dest_b",
+      "leader_vehicle_id": "truck_3",
+      "ordered_members": [
+        "truck_3"
+      ]
+    }
+  },
+  "vehicles": {
+    "truck_3": {
+      "platoon_id": "platoon_truck3",
+      "local_truck_id": 0,
+      "role": "leader",
+      "destination_id": "dest_b",
+      "branched_from": "platoon_a",
+      "original_vehicle_id": "platoon_a_truck2"
+    }
+  }
+}
