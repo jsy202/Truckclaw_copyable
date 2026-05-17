@@ -116,17 +116,26 @@ def create_config_bundle(output_path, truck1_agent_dir, truck3_template_dir):
             tar.add(tmpdir, arcname=".")
     print(f"  완료: {output_path.stat().st_size/1024:.1f} KB")
 
-class Replicator:
-    def __init__(self, truck1_agent_dir=None, truck3_template_dir=None,
-                 transfer_dir=None, openclaw_data_dir=None,
+class BranchReplicator:
+    def __init__(self, source_truck_id="truck0", branch_truck_id="truck2",
+                 branch_agent_dir=None, source_openclaw_data_dir=None,
+                 branch_openclaw_data_dir=None,
                  discord_token="", gateway_token="", openai_api_key=""):
-        self.truck1_agent_dir    = Path(truck1_agent_dir    or PROJECT_ROOT/"agents"/"platoon-a")
-        self.truck3_template_dir = Path(truck3_template_dir or PROJECT_ROOT/"agents"/"truck3")
-        self.transfer_dir        = Path(transfer_dir        or PROJECT_ROOT/".transfer")
-        self.openclaw_data_dir   = Path(openclaw_data_dir   or PROJECT_ROOT/".openclaw-truck3")
+        self.source_truck_id   = source_truck_id
+        self.branch_truck_id   = branch_truck_id
+        self.source_container  = f"openclaw-{source_truck_id}"
+        self.branch_container  = f"openclaw-{branch_truck_id}"
+
+        self.truck1_agent_dir    = Path(PROJECT_ROOT / "agents" / "platoon-a")
+        self.truck3_template_dir = branch_agent_dir or (PROJECT_ROOT / "agents" / "truck3")
+        self.transfer_dir        = Path(PROJECT_ROOT / ".transfer")
+        self.openclaw_data_dir   = branch_openclaw_data_dir or (PROJECT_ROOT / ".openclaw-truck3")
+        
+        # ⚠️ 사용자 ID 1505107885573673041 에 해당하는 TRUCK3 토큰 사용
         self.discord_token       = discord_token  or os.environ.get("TRUCK3_DISCORD_BOT_TOKEN","")
         self.gateway_token       = gateway_token  or os.environ.get("TRUCK3_OPENCLAW_GATEWAY_TOKEN","")
         self.openai_api_key      = openai_api_key or os.environ.get("OPENAI_API_KEY","")
+        
         self._done_event         = threading.Event()
         self._success            = False
 
