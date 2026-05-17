@@ -242,9 +242,11 @@ class BranchCoordinator:
         self.state      = BranchState.CRUISE
         self.triggered  = False
         self._v         = None    # truck2 (분리된 후미)
+        self._v_platoon = None    # truck2를 담은 새 군집
         self._pid       = None
         self._ticks     = 0
         self._gap_ok    = 0
+        self._target_lane_id = None
         self._target_lane_wpt = None
         self.last_status = "idle"
 
@@ -261,7 +263,8 @@ class BranchCoordinator:
         if self.state == BranchState.CRUISE:
             if self.triggered: self._start_migrate()
         elif self.state == BranchState.MIGRATE:
-            if self.replicator and self.replicator._done_event.is_set():
+            # wait(timeout=0)으로 비차단 체크
+            if self.replicator and self.replicator.wait(timeout=0):
                 print("[branch] OpenClaw 복제 완료 → GAP 확보")
                 self.state = BranchState.GAP
             elif self.replicator is None:
@@ -281,89 +284,86 @@ class BranchCoordinator:
 
     def _update_gap(self):
         if self._v is None:
-            # truck2 분리 (improve split 패턴)
-            new_p, _ = self.platoon.split(2, 2)
-            self._v = new_p[0]
-            try: self.sim.platoons.remove(new_p)
-            except ValueError: pass
+            # truck2 분리 (index 2)
+            self._v_platoon, _ = self.platoon.split(2, 2)
+            self._v = self._v_platoon[0]
+            
+            # truck2 제어를 위해 PID 생성
             self._v.attach_controller(None)
             self._pid = _make_pid(self._v._carla_vehicle)
             print(f"[branch] truck2 분리. 잔여 군집: {len(self.platoon)}대")
             self.last_status = "gap_opening"
             return
 
-        # truck1과 truck2 사이 간격 확보
-        tail = self.platoon[-1]  # truck1 (새 후미)
+        # 앞차(truck1)와의 간격 확보
+        tail = self.platoon[-1]  # truck1
         gap = tail.distance_to(self._v)
+        
         if gap >= OPEN_GAP_READY_M: self._gap_ok += 1
         else: self._gap_ok = 0
 
-        ego_wpt = self.cmap.get_waypoint(
-            self._v._carla_vehicle.get_location(),
-            project_to_road=True, lane_type=carla.LaneType.Driving,
-        )
+        ego_wpt = self.cmap.get_waypoint(self._v.get_location())
         if ego_wpt:
             target_wpt = _advance_waypoint(ego_wpt, 20.0)
-            ctrl = self._pid.run_step(SYNC_SPEED_KMH * 0.9, target_wpt)
-            ctrl.hand_brake = False
-            self._v._carla_vehicle.apply_control(ctrl)
+            # truck2 감속 (60% 속도)
+            ctrl = self._pid.run_step(SYNC_SPEED_KMH * 0.6, target_wpt)
+            self._v.apply_control(ctrl)
 
         self.last_status = f"gap={gap:.1f}/{OPEN_GAP_READY_M}m ok={self._gap_ok}"
         if self._gap_ok >= GAP_STABLE_TICKS:
-            print(f"[branch] 간격 {gap:.1f}m 확보 → LC 시작")
+            print(f"[branch] 간격 확보 완료 ({gap:.1f}m) → LC 시작")
             self._start_lc()
 
     def _start_lc(self):
-        ego_wpt = self.cmap.get_waypoint(
-            self._v._carla_vehicle.get_location(),
-            project_to_road=True, lane_type=carla.LaneType.Driving,
-        )
-        self._target_lane_wpt = None
-        if ego_wpt:
-            adj = _driving_adjacent_lanes(ego_wpt)
-            if adj:
-                self._target_lane_wpt = adj[0]
-                print(f"[branch] 목표 차선: road={self._target_lane_wpt.road_id} lane={self._target_lane_wpt.lane_id}")
+        ego_wpt = self.cmap.get_waypoint(self._v.get_location())
+        adj = _driving_adjacent_lanes(ego_wpt)
+        if adj:
+            self._target_lane_wpt = adj[0]
+            self._target_lane_id = (self._target_lane_wpt.road_id, self._target_lane_wpt.lane_id)
+            print(f"[branch] LC 시작: 목표 차선 road={self._target_lane_id[0]} lane={self._target_lane_id[1]}")
+        else:
+            print("[branch] 에러: 인접 차선 없음! 제자리에서 DONE 시도")
+            self._target_lane_wpt = ego_wpt
+            self._target_lane_id = (ego_wpt.road_id, ego_wpt.lane_id)
+
         self._ticks = 0
         self.state = BranchState.LC
 
     def _update_lc(self):
-        if not self._v: return
         self._ticks += 1
-        ego_loc = self._v._carla_vehicle.get_location()
-
-        if self._target_lane_wpt:
-            target_wpt = self.cmap.get_waypoint(
-                carla.Location(
-                    x=ego_loc.x + 20.0 * math.cos(math.radians(self._v._carla_vehicle.get_transform().rotation.yaw)),
-                    y=self._target_lane_wpt.transform.location.y,
-                    z=self._target_lane_wpt.transform.location.z,
-                ),
-                project_to_road=True, lane_type=carla.LaneType.Driving,
-            ) or _advance_waypoint(self._target_lane_wpt, 20.0)
-        else:
-            ego_wpt = self.cmap.get_waypoint(ego_loc, project_to_road=True, lane_type=carla.LaneType.Driving)
-            adj = _driving_adjacent_lanes(ego_wpt) if ego_wpt else []
-            target_wpt = _advance_waypoint(adj[0], 20.0) if adj else ego_wpt
-
+        ego_loc = self._v.get_location()
+        ego_wpt = self.cmap.get_waypoint(ego_loc)
+        
+        # 목표 차선 추적
+        target_wpt = _advance_waypoint(self._target_lane_wpt, 20.0)
+        self._target_lane_wpt = _advance_waypoint(self._target_lane_wpt, self._v.speed * DT)
+        
         ctrl = self._pid.run_step(SYNC_SPEED_KMH, target_wpt)
-        ctrl.hand_brake = False
-        self._v._carla_vehicle.apply_control(ctrl)
+        self._v.apply_control(ctrl)
 
-        tail = self.platoon[-1]
-        lat = signed_lateral_offset(tail, self._v)
-        self.last_status = f"LC lat={lat:.2f} ticks={self._ticks}"
-
-        if abs(lat) >= 2.5 or self._ticks > 2000:
-            reason = "차선변경 완료" if abs(lat) >= 2.5 else "타임아웃"
-            print(f"[branch] {reason} lat={lat:.2f} → DONE")
+        # 차선 변경 완료 판정
+        if ego_wpt.road_id == self._target_lane_id[0] and ego_wpt.lane_id == self._target_lane_id[1]:
+            print(f"[branch] 차선 변경 완료 → DONE")
             self._finalize()
+            return
+
+        if self._ticks > 2000:
+            print(f"[branch] LC 타임아웃 → DONE 강제 전환")
+            self._finalize()
+            return
+
+        self.last_status = f"LC ticks={self._ticks}"
 
     def _finalize(self):
+        # 분리된 truck2에게 LeadNavigator 부여하여 계속 주행하게 함
+        nav = PlatooningControllers.LeadNavigator(self._v._carla_vehicle, initial_speed=SYNC_SPEED_KMH)
+        self._v.attach_controller(nav)
+        nav.waypoints_ahead = compute_lead_route(self.cmap, self._v.get_location())
+        
         _bridge_post("/branch", {"vehicle":"truck2","status":"complete"})
         _branch_complete_event.set()
         self.state = BranchState.DONE
-        print("[branch] >>> 분기 완료! truck2 독립 주행")
+        print("[branch] >>> 분기 완료! truck2 독립 주행 시작")
 
     def status_line(self):
         return f"{self.state.name} {self.last_status}"
@@ -491,9 +491,9 @@ def main():
             if step % 100 == 0:
                 print(f"t={step*DT:6.1f}s speeds=({speeds()}) gaps=({gaps()}) state={coord.status_line()}")
 
-            if coord.state == BranchState.DONE:
+            if coord.state == BranchState.DONE and not auto_triggered:
                 print("[main] 분기 완료! 계속 주행...")
-                time.sleep(5); break
+                auto_triggered = True  # 메시지 중복 방지
 
             step += 1
     finally:

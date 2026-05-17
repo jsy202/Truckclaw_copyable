@@ -7,7 +7,7 @@ V2V 전송은 청크 복사로 에뮬레이션
 """
 from __future__ import annotations
 
-import json, os, shutil, subprocess, sys, tarfile, tempfile, time
+import json, os, shutil, subprocess, sys, tarfile, tempfile, time, threading
 from pathlib import Path
 
 PROJECT_ROOT   = Path(__file__).parent.parent
@@ -127,37 +127,56 @@ class Replicator:
         self.discord_token       = discord_token  or os.environ.get("TRUCK3_DISCORD_BOT_TOKEN","")
         self.gateway_token       = gateway_token  or os.environ.get("TRUCK3_OPENCLAW_GATEWAY_TOKEN","")
         self.openai_api_key      = openai_api_key or os.environ.get("OPENAI_API_KEY","")
+        self._done_event         = threading.Event()
+        self._success            = False
 
-    def replicate(self):
-        print(_c("bold", "\n" + "═"*60))
-        print(_c("bold", "  OpenClaw 복제 시작 (truck_1 → truck_3)"))
-        print("═"*60)
-
-        tx_dir  = self.transfer_dir / "tx"   # truck_1 측 전송 버퍼
-        rx_dir  = self.transfer_dir / "rx"   # truck_3 측 수신 버퍼
-        image_tar  = tx_dir / "openclaw_image.tar"
-        config_tar = tx_dir / "config_bundle.tar"
-        rx_image   = rx_dir / "openclaw_image.tar"
-        rx_config  = rx_dir / "config_bundle.tar"
-
-        # Bundle 1: 이미지
-        create_image_bundle(image_tar)
-        print(_c("cyan", "\n[V2V] 이미지 번들 전송 중..."))
-        _v2v_transfer(image_tar, rx_image, "openclaw_image.tar")
-
-        # Bundle 2: Config
-        create_config_bundle(config_tar, self.truck1_agent_dir, self.truck3_template_dir)
-        print(_c("cyan", "\n[V2V] Config 번들 전송 중..."))
-        _v2v_transfer(config_tar, rx_config, "config_bundle.tar")
-
-        # vehicle-truck3에서 로드 + 실행
-        print(_c("cyan", "\n[vehicle-truck3] 이미지 로드 + config 압축 해제 + openclaw 실행"))
-        self._load_and_run(rx_image, rx_config)
-
-        print("\n" + "═"*60)
-        print(_c("green", "  복제 완료 ✓"))
-        print("═"*60 + "\n")
+    def replicate(self, blocking=True):
+        if blocking:
+            self._run()
+        else:
+            t = threading.Thread(target=self._run, daemon=True)
+            t.start()
         return True
+
+    def wait(self, timeout=120.0):
+        return self._done_event.wait(timeout=timeout)
+
+    def _run(self):
+        try:
+            print(_c("bold", "\n" + "═"*60))
+            print(_c("bold", "  OpenClaw 복제 시작 (truck_1 → truck_3)"))
+            print("═"*60)
+
+            tx_dir  = self.transfer_dir / "tx"   # truck_1 측 전송 버퍼
+            rx_dir  = self.transfer_dir / "rx"   # truck_3 측 수신 버퍼
+            image_tar  = tx_dir / "openclaw_image.tar"
+            config_tar = tx_dir / "config_bundle.tar"
+            rx_image   = rx_dir / "openclaw_image.tar"
+            rx_config  = rx_dir / "config_bundle.tar"
+
+            # Bundle 1: 이미지
+            create_image_bundle(image_tar)
+            print(_c("cyan", "\n[V2V] 이미지 번들 전송 중..."))
+            _v2v_transfer(image_tar, rx_image, "openclaw_image.tar")
+
+            # Bundle 2: Config
+            create_config_bundle(config_tar, self.truck1_agent_dir, self.truck3_template_dir)
+            print(_c("cyan", "\n[V2V] Config 번들 전송 중..."))
+            _v2v_transfer(config_tar, rx_config, "config_bundle.tar")
+
+            # vehicle-truck3에서 로드 + 실행
+            print(_c("cyan", "\n[vehicle-truck3] 이미지 로드 + config 압축 해제 + openclaw 실행"))
+            self._load_and_run(rx_image, rx_config)
+
+            print("\n" + "═"*60)
+            print(_c("green", "  복제 완료 ✓"))
+            print("═"*60 + "\n")
+            self._success = True
+        except Exception as e:
+            print(_c("red", f"복제 실패: {e}"))
+            self._success = False
+        finally:
+            self._done_event.set()
 
     def _load_and_run(self, rx_image, rx_config):
         # docker load
@@ -194,6 +213,19 @@ class Replicator:
             print(f"  {_c('green','openclaw-truck3 실행됨')} (id={r.stdout.strip()[:12]})")
         else:
             print(f"  {_c('red','openclaw-truck3 실행 실패')}: {r.stderr.strip()}")
+
+# ── 구 선두 openclaw 컨테이너 삭제 ───────────────────────────────────────────
+def delete_old_openclaw(old_container_name: str):
+    """CARLA 분기 완료 후 호출: 구 선두의 openclaw 컨테이너 삭제."""
+    print(_c("cyan", f"\n[cleanup] {old_container_name} 컨테이너 삭제 중..."))
+    r = subprocess.run(
+        ["docker", "rm", "-f", old_container_name],
+        capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        print(f"  {_c('green', f'{old_container_name} 삭제 완료')}")
+    else:
+        print(_c("yellow", f"  {old_container_name} 삭제 실패 (이미 없을 수 있음): {r.stderr.strip()}"))
 
 def main():
     import argparse
