@@ -426,7 +426,8 @@ def main():
 
     # CARLA 초기화 (improve 패턴)
     sim  = Core.Simulation(world="Town06", dt=DT, synchronous=True)
-    sim.world.set_weather(carla.WeatherParameters.ClearNoon)
+    # 어두운 석양 날씨
+    sim.world.set_weather(carla.WeatherParameters.CloudySunset)
 
     cmap = sim.map
     bps  = sim.get_vehicle_blueprints()
