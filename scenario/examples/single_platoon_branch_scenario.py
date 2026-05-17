@@ -502,7 +502,7 @@ def main():
 
             if step % 100 == 0:
                 d_status = _get_docker_status()
-                d_str = f"[{", ".join(d_status)}]" if d_status else "[No Containers]"
+                d_str = f"[{', '.join(d_status)}]" if d_status else "[No Containers]"
                 print(f"t={step*DT:6.1f}s speeds=({speeds()}) gaps=({gaps()}) docker={d_str} state={coord.status_line()}")
 
             if coord.state == BranchState.DONE and not auto_triggered:
