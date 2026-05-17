@@ -13,10 +13,10 @@
     "carla_trigger_owner": "bridge"
   },
   "discord": {
-    "channel": "1503300024858050602",
-    "channel_id": "1503300024858050602",
-    "own_discord_id": "<@1479297673432399923>",
-    "peer_discord_id": "<@1479297098938585170>"
+    "channel": "1505104257634926602",
+    "channel_id": "1505104257634926602",
+    "own_discord_id": "<@1505082171050688552>",
+    "peer_discord_id": "<@1505107885573673041>"
   },
   "destination_file": "/data/openclaw/.openclaw/workspace/data/vehicle_destinations.json",
   "own_platoon": {

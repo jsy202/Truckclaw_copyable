@@ -6,6 +6,11 @@
   "platoon_id": "platoon_truck3",
   "role": "solo",
   "discord_channel_id": "1505104257634926602",
+  "discord": {
+    "channel_id": "1505104257634926602",
+    "own_discord_id": "<@1505107885573673041>",
+    "peer_discord_id": "<@1505082171050688552>"
+  },
   "bridge": {
     "base_url": "http://127.0.0.1:18801",
     "cli": "/project/scripts/platoon_bridge_ctl.py"

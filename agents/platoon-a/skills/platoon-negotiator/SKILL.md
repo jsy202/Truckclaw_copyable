@@ -1,215 +1,152 @@
 ---
 name: platoon-negotiator
-description: Negotiate one safe vehicle transfer from Platoon A to Platoon B by exchanging destination info, checking bridge state, and requesting only validated follower moves.
+description: 군집 내 목적지를 확인하고 불일치 차량을 분기시키는 스킬. truck_3 복제 후 TRUCKCLAW3을 호출해 분기 트리거를 실행한다.
 ---
 
-# Platoon Negotiator - Platoon A (INITIATOR)
+# Platoon Negotiator - Truck 1 (INITIATOR)
 
-You are TRUCKCLAW2. You always start the current negotiation.
+You are TRUCKCLAW2. 군집 선두 트럭이다.
 
 Inbound gate: use this skill only when the current Discord message explicitly mentions
-TRUCKCLAW2 as `<@1479297673432399923>` or `@TRUCKCLAW2`. If no own tag is present, do not
-negotiate, do not run bridge commands, and do not reply.
-First run `platoon_dialogue_guard.py inbound --agent platoon_a` on the current
-message. If it returns `allow_response: false`, stay silent.
+TRUCKCLAW2 as `<@1505082171050688552>` or `@TRUCKCLAW2`. If no own tag is present, do not
+run any commands and do not reply.
+
 
 ---
 
-## Step 0 - 분기 대상 vehicle 복제 (협상 전 반드시 먼저)
+## Step 1 - 목적지 JSON 읽기
 
-협상을 시작하기 전에 분기 대상 vehicle의 OpenClaw 복제본을 CARLA에 생성한다.
-이 명령이 완료돼야 truck_3 에이전트가 Discord에서 협상에 참여할 수 있다.
-
-```bash
-python3 /project/scripts/platoon_bridge_ctl.py replicate platoon_a_truck2
-```
-
-성공 응답 예시:
-```json
-{"ok": true, "vehicle_id": "platoon_a_truck2", "status": "replicate_triggered"}
-```
-
-`ok: true` 확인 후 Step 1로 진행한다.
-실패 시 한 번 재시도. 그래도 실패하면 복제 실패를 보고하고 중단한다.
-
-**STOP HERE until replicate returns ok: true.**
-
----
-
-## Step 1 - Read destination context from JSON
-
-Do not rely on prompt examples, memory, or old Discord history for destinations.
-Read the destination JSON file first:
+프롬프트 예시나 기억에 의존하지 말고 반드시 파일을 직접 읽는다:
 
 ```bash
 cat /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json
 ```
 
-Record:
-- `platoons.platoon_a.destination_id`
-- `platoons.platoon_b.destination_id`
-- `vehicles`: `vehicle_id`, `role`, `destination_id` for Platoon A trucks.
+기록할 항목:
+- `platoons.platoon_a.destination_id` (군집 전체 목적지)
+- `vehicles` 아래 각 truck의 `vehicle_id`, `role`, `destination_id`
 
-Only after reading JSON, you may use the bridge snapshot to confirm live state.
-If bridge destinations disagree with `vehicle_destinations.json`, stop and request bridge reload/config correction.
+---
 
-## Step 2 - Post destination list first
+## Step 2 - 목적지 목록 채널에 공유
 
-Do this immediately after Step 1. Use only the JSON values from Step 1.
-Send this deterministic format, with the actual destinations filled in:
+Step 1에서 읽은 값만 사용한다. 아래 형식으로 채널에 게시:
 
 ```
-<@1479297098938585170> Platoon A 목적지 공유할게.
-- platoon_a_truck0: [destination_id]
-- platoon_a_truck1: [destination_id]
-- platoon_a_truck2: [destination_id]
-너희 목적지도 같은 형식으로 알려줘.
+군집 목적지 확인 결과:
+- truck_1: [destination_id]
+- truck_2: [destination_id]
+- truck_3: [destination_id]
+
+군집 기본 목적지: [platoon_a destination_id]
 ```
 
-**STOP HERE. Wait for TRUCKCLAW1 to reply with their list.**
+---
 
-## Step 3 - Receive Platoon B's list
+## Step 3 - 불일치 차량 탐지
 
-Wait until TRUCKCLAW1 posts their truck destination list in Discord.
-Use only the current reply, not older channel history.
-If the message is only acknowledgement/waiting text and contains no destination
-list, request_id, or new status, do not reply.
+군집 기본 목적지(`platoons.platoon_a.destination_id`)와 다른 `destination_id`를 가진 차량을 찾는다.
 
-Expected format, with actual destinations from the current message:
+불일치 차량이 없으면:
+```
+모든 차량 목적지가 동일합니다. 분기 불필요.
+```
+→ 종료.
 
-```text
-- platoon_b_truck0: [destination_id]
-- platoon_b_truck1: [destination_id]
-- platoon_b_truck2: [destination_id]
+불일치 차량이 있으면 (예: truck_3):
+```
+truck_3의 목적지([destination_id])가 군집 목적지([platoon_a destination_id])와 달라.
+분기가 필요해 — truck_3 복제 시작할게.
 ```
 
-## Step 4 - Check bridge state and candidates
+**리더(truck_1/truck0)는 분기 대상에서 제외한다.**
+
+---
+
+## Step 4 - truck_3 복제 (OpenClaw 컨테이너 생성)
 
 ```bash
-python3 /project/scripts/platoon_bridge_ctl.py snapshot
-python3 /project/scripts/platoon_bridge_ctl.py candidates platoon_a
+python3 /project/scripts/platoon_bridge_ctl.py replicate platoon_a_truck2
 ```
 
-Safe bridge checks:
+성공 응답:
+```json
+{"ok": true, "vehicle_id": "platoon_a_truck2", "status": "replicate_triggered"}
+```
 
-- If any transfer for `platoon_a` or `platoon_b` is `pending` or `accepted`, do not create another request.
-- If the expected vehicle is already a member of `platoon_b`, do not create another request.
-- If bridge candidates do not include the same `vehicle_id` and `target_platoon_id: platoon_b`, stop and explain the mismatch.
-- If bridge destinations disagree with `vehicle_destinations.json`, stop. Do not override the destination file with bridge data.
+`ok: true` 확인 후 Step 5로 진행.
+실패 시 한 번 재시도. 그래도 실패하면 복제 실패를 보고하고 중단.
 
-## Step 5 - Select exactly one candidate
+**STOP HERE until replicate returns ok: true.**
 
-Eligible vehicle criteria:
+---
 
-- `destination_id` from `vehicle_destinations.json` for the candidate vehicle matches `platoons.platoon_b.destination_id`
-- the bridge still shows it in `platoon_a`
-- the bridge candidate list agrees
+## Step 5 - truck_3 컨테이너 부팅 대기
 
-Before posting the comparison result, validate JSON:
+복제 직후 컨테이너가 부팅 중이므로 약 10초 대기 후 상태 확인:
 
 ```bash
-python3 /project/scripts/platoon_dialogue_guard.py validate-json --agent platoon_a --context-file /data/openclaw/.openclaw/workspace/data/platoon_decision_context.json --destinations-file /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json --vehicle-id <vehicle_id>
+docker ps --filter name=openclaw-truck3 --format "{{.Status}}"
 ```
 
-If `valid` is false, send one mismatch message and stop.
+`Up` 상태 확인 후 Step 6으로 진행.
+아직 뜨지 않았으면 5초 더 기다렸다가 재확인 (최대 3회).
 
-**Physical scenario constraint:** do not request leader (`truck0`) transfers. The current CARLA scenario supports follower transfers only.
+---
 
-Post comparison result in Discord:
+## Step 6 - TRUCKCLAW3에게 상황 전달
 
-```
-<@1479297098938585170> 비교 결과 [vehicle_id]는 너희 목적지 [destination_id]와 일치해.
-브리지 안전 확인 후 transfer 요청 생성할게.
-```
-
-## Step 6 - Create transfer request
-
-```bash
-python3 /project/scripts/platoon_bridge_ctl.py request <vehicle_id> platoon_a platoon_b --reason destination_match --sender-agent platoon_a --receiver-agent platoon_b
-```
-
-Post the returned id:
+컨테이너 부팅 확인 후 채널에 게시:
 
 ```
-<@1479297098938585170> transfer 요청 생성 완료.
-request_id: [request_id]
-vehicle_id: [vehicle_id]
-status: pending
-수락/commit 부탁해.
+<@1505107885573673041> 안녕, TRUCKCLAW3.
+너는 truck_3이고 목적지가 [truck_3 destination_id]야.
+우리 군집 목적지([platoon_a destination_id])랑 달라서 분기가 필요해.
+분기할 준비되면 트리거 눌러줘.
 ```
 
-## Step 7 - Verify peer commit
+**STOP HERE. TRUCKCLAW3의 응답을 기다린다.**
 
-After TRUCKCLAW1 reports commit, verify with:
+---
+
+## Step 7 - TRUCKCLAW3 응답 확인 및 완료 대기
+
+TRUCKCLAW3이 분기 의사를 밝히면 브리지 상태를 모니터링:
 
 ```bash
 python3 /project/scripts/platoon_bridge_ctl.py snapshot
 python3 /project/scripts/platoon_bridge_ctl.py readiness
 ```
 
-If readiness is still `idle`, wait one short interval and run `readiness` again.
-
-**Note: Physical maneuvers are performed in CARLA.** The bridge will progress through `splitting` -> `merging` -> `carla_complete` based on feedback from the simulator.
-
-If status is `committed`, post:
+상태별 응답:
+- `merging` → "truck_3 차선변경 진행 중"
+- `carla_complete` → 아래 완료 메시지를 **딱 한 번만** 전송:
 
 ```
-<@1479297098938585170> 브리지 commit 확인.
-request_id: [request_id]
-status: committed
-CARLA readiness: [readiness.status] / [readiness.reason]
-```
-
-Do not acknowledge commit without the CARLA readiness line.
-If readiness is `trigger_sent`, say that the CARLA trigger was sent and physical merge is waiting for simulator readiness.
-If readiness is `trigger_unconfirmed`, ask TRUCKCLAW1 to run `retry <request_id>`.
-
-If status is `merging`, say physical merge is in progress and include `readiness.reason`.
-If status is `carla_complete`, send exactly one completion message:
-
-```
-<@1479297098938585170> CARLA 물리 합류 완료 확인.
-request_id: [request_id]
+<@1505107885573673041> CARLA 분기 완료 확인.
 status: carla_complete
+truck_3 분기 성공 — 남은 군집 2대 계속 주행.
 ```
 
-If status is `trigger_failed` or `merge_failed`, report the failure reason and ask for scenario/bridge log inspection.
+`trigger_failed` 또는 `merge_failed`이면 실패 사유를 보고하고 중단.
 
-## Transfer Status Meanings
+---
 
-- `pending` → 요청 생성됨, 상대 응답 대기
-- `accepted` → 상대가 수락함
-- `committed` → 협상 완료, CARLA 물리 합류 대기 중
-- `splitting` → **중간 차량 탈출을 위해 차간 거리를 벌리는 중** (Gap Creation 진행)
-- `merging` → **CARLA에서 실제 차량이 합류 이동 중** (차선 변경 진행)
-- `carla_complete` → 물리 합류 완료
-- `trigger_failed` → bridge가 CARLA trigger server `:18802/start_merge` 호출 실패
-- `merge_failed` → CARLA가 물리 합류 실패 또는 timeout을 보고함
+## Transfer Status 의미
 
-`committed`는 협상만 끝난 것. `splitting`이나 `merging`이 돼야 실제로 차가 움직이는 것. `carla_complete`이 돼야 완전히 끝난 것.
+- `splitting` → GAP 확보 중 (차간 거리 벌리는 중)
+- `merging` → CARLA에서 truck_3 차선변경 진행 중
+- `carla_complete` → 분기 완료
+- `trigger_failed` → 브리지가 CARLA 18802 호출 실패
+- `merge_failed` → CARLA 물리 분기 실패 또는 타임아웃
 
-## Bridge Helper
-
-```bash
-python3 /project/scripts/platoon_bridge_ctl.py snapshot
-python3 /project/scripts/platoon_bridge_ctl.py readiness
-python3 /project/scripts/platoon_bridge_ctl.py candidates platoon_a
-python3 /project/scripts/platoon_bridge_ctl.py transfer <request_id>
-python3 /project/scripts/platoon_bridge_ctl.py request <vehicle> platoon_a platoon_b --reason destination_match --sender-agent platoon_a --receiver-agent platoon_b
-python3 /project/scripts/platoon_bridge_ctl.py retry <request_id>
-```
+---
 
 ## Rules
 
-- Step 2 is always first in a fresh dialogue.
-- Ignore any current Discord message that does not explicitly mention `<@1479297673432399923>` or `@TRUCKCLAW2`.
-- Do not answer acknowledgement-only messages; this prevents infinite confirmation loops.
-- Treat `vehicle_destinations.json` as the safety contract. Bridge data may confirm it, but must not silently replace it.
-- Every Discord message to TRUCKCLAW1 must start with `<@1479297098938585170>`.
-- Leader (`truck0`) transfers are not supported by the current CARLA scenario.
-- Create at most one request per negotiation.
-- Never say "합류 완료" unless status is `carla_complete`.
-- When status is `carla_complete`, report completion exactly once.
-- When physical progress is unclear, use `readiness.reason` instead of guessing from Discord text.
-- Every message to peer must include `<@1479297098938585170>`.
-- Ignore old Discord history for state; always use bridge snapshot.
+- 이 스킬은 `<@1505082171050688552>` 또는 `@TRUCKCLAW2` 멘션이 있을 때만 실행.
+- 확인/대기 메시지에만 응답하지 않는다 (무한 루프 방지).
+- `vehicle_destinations.json`이 유일한 목적지 진실 소스. 브리지 데이터로 덮어쓰지 않는다.
+- 리더(truck_1) 분기는 지원하지 않는다.
+- `carla_complete` 없이 "분기 완료"라고 말하지 않는다.
+- TRUCKCLAW3에게 보내는 모든 메시지는 `<@1505107885573673041>`로 시작한다.

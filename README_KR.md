@@ -1,96 +1,212 @@
-# Truckclaw-improve 🚛 (트럭 군집 협상 및 이송 시뮬레이션)
+# Truckclaw 🚛 (트럭 군집 분기 시뮬레이션 + OpenClaw AI 에이전트 연동)
 
-본 프로젝트는 CARLA 자율주행 시뮬레이터 환경에서 AI 에이전트 간의 협상을 통해 트럭 군집(Platoon) 간 차량 이송을 제어하는 고도화된 시뮬레이션 시스템입니다.
-
----
-
-## 🚀 주요 기능 및 개선 사항
-
-1.  **AI 에이전트 협상 제어:** Discord AI 봇(OpenClaw)이 트럭의 목적지를 비교하여 이송 필요성을 판단하고 자동으로 기동을 트리거합니다.
-2.  **안전 최우선 설계 (Fail-safe):**
-    *   **분기점 충돌 방지:** 전방 30m 이내에 고속도로 분기점(Fork) 감지 시 기동을 즉시 중단하여 충돌을 방지합니다.
-    *   **물리적 타임아웃:** 차선 변경이나 합류가 일정 시간 내에 완료되지 않으면 안전하게 기동을 멈춥니다.
-3.  **이중 간격(Double-Gap) 확보:** 중간 트럭이나 리더 트럭 이송 시에도 앞뒤 차량이 충분한 안전 거리를 벌린 후 기동을 시작합니다.
-4.  **중앙 집중식 설정 관리:** `config/simulation.json` 파일을 통해 코드 수정 없이 주행 속도, 차간 거리, 타임아웃 등을 조정할 수 있습니다.
-5.  **리더 이송 지원:** 군집의 리더(truck0)가 이송될 경우, 다음 차량이 즉시 새로운 리더로 승격되어 군집의 연속성을 유지합니다.
+CARLA 0.9.6 시뮬레이터에서 3대 트럭 군집이 주행하다가 AI 에이전트(OpenClaw)가 목적지를 확인하고 불일치 차량을 자동으로 분기시키는 시뮬레이션 시스템.
 
 ---
 
-## 🏗 아키텍처 구조
+## 🚀 시나리오 개요
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Discord 채널                        │
-│   TRUCKCLAW2 (Platoon A)  ↔  TRUCKCLAW1 (Platoon B)     │
-└────────────┬────────────────────────┬────────────────────┘
-             │                        │
-             ▼                        ▼
-┌────────────────────────────────────────────────────────┐
-│              Bridge Server (port 18801)                 │
-│   협상 상태 관리 및 CARLA 물리 상태 동기화 REST API      │
-└────────────────────────────┬───────────────────────────┘
-                             │
-                      Commit 시 트리거
-                             ▼
-┌────────────────────────────────────────────────────────┐
-│             CARLA 시나리오 (port 18802)                  │
-│   물리 시뮬레이션, PID 제어, 장애물/분기점 감지, 합류 수행 │
-└────────────────────────────┬───────────────────────────┘
-                             │
-                             ▼
-┌────────────────────────────────────────────────────────┐
-│              CARLA Town06 (포트 2000)                   │
-│         실제 트럭 물리 시뮬레이션 및 그래픽 렌더링          │
-└────────────────────────────────────────────────────────┘
+3대 군집 (truck_1, truck_2, truck_3) 주행 중
+  ↓
+사람이 Discord에서 @TRUCKCLAW2 에게 목적지 확인 요청
+  ↓
+TRUCKCLAW2 (truck_1 에이전트):
+  → vehicle_destinations.json 읽기
+  → 목적지 목록 채널에 공유
+  → truck_3 목적지 불일치 감지
+  → truck_3 OpenClaw 컨테이너 복제
+  → 부팅 완료 후 @TRUCKCLAW3 호출
+  ↓
+TRUCKCLAW3 (truck_3 에이전트):
+  → "분기할게" 선언
+  → 브리지 트리거 실행
+  ↓
+CARLA: truck_3 차선변경 → 단독 주행
+남은 군집 (truck_1, truck_2): x=600 분기점에서 lane=-4 진입
+```
+
+---
+
+## 🏗 아키텍처
+
+```
+Discord 채널 (1505104257634926602)
+  TRUCKCLAW2 <@1505082171050688552>  ↔  TRUCKCLAW3 <@1505107885573673041>
+        │                                        │
+        ▼                                        ▼
+  Bridge Server (port 18801)          Bridge Server (port 18801)
+  협상 상태 관리 REST API
+        │
+        │ commit → trigger
+        ▼
+  CARLA Trigger Server (port 18802)
+  /start_replicate  → truck_3 컨테이너 복제
+  /start_merge      → truck_3 차선변경 트리거
+        │
+        ▼
+  CARLA Town06 (port 2000)
+  물리 시뮬레이션
 ```
 
 ---
 
 ## 📂 프로젝트 구조
 
-- `scenario/`: CARLA 물리 시뮬레이션 스크립트 및 군집 주행 라이브러리.
-- `bridge/`: 협상 에이전트와 CARLA를 연결하는 REST API 서버.
-- `agents/`: AI 에이전트(OpenClaw)의 페르소나 및 협상 스킬 지침(SKILL.md).
-- `platoon_destinations.json`: 군집 및 차량 목적지 설정. 사람이 직접 수정하기 쉬운 루트 설정 파일.
-- `config/`: 시뮬레이션 파라미터(`simulation.json`) 및 이전 형식 목적지 설정(`platoons.json`, fallback).
+```
+Truckclaw_copyable/
+├── carla_start.sh                  # CARLA 0.9.6 원클릭 실행
+├── run_truckclaw.sh                # 시나리오 원클릭 실행
+├── carla_stop.sh                   # CARLA 종료
+├── .env.single-platoon             # 봇 토큰 설정 (직접 생성)
+├── scenario/
+│   └── examples/
+│       └── single_platoon_branch_scenario.py  # 메인 시나리오
+├── bridge/
+│   ├── platoon_bridge_server.py    # REST API 브리지 서버 (18801)
+│   └── platoon_bridge_ctl.py       # 브리지 CLI 도구
+├── agents/
+│   ├── platoon-a/                  # TRUCKCLAW2 에이전트 설정
+│   │   ├── AGENTS.md
+│   │   ├── SOUL.md
+│   │   ├── TOOLS.md
+│   │   ├── skills/platoon-negotiator/SKILL.md
+│   │   └── data/
+│   │       ├── vehicle_destinations.json
+│   │       └── platoon_decision_context.json
+│   └── truck3/                     # TRUCKCLAW3 에이전트 템플릿
+│       ├── AGENTS.md
+│       ├── SOUL.md
+│       ├── skills/platoon-negotiator/SKILL.md
+│       └── data/
+│           ├── vehicle_destinations.json
+│           └── platoon_decision_context.json
+├── openclaw_migration/
+│   └── replicator.py               # truck_3 컨테이너 복제기
+├── config/
+│   └── simulation.json             # 시뮬레이션 파라미터
+└── docker-compose.single-platoon.yml
+```
 
 ---
 
 ## 🛠 실행 방법
 
-### 1. CARLA 시뮬레이터 실행
-CARLA 0.9.13 이상의 버전을 실행합니다. (Town06 맵 권장)
+### 사전 준비
 
-### 2. 브리지 서버 실행
-에이전트 간의 협상 상태를 관리합니다.
+1. CARLA 0.9.6 설치: `/opt/carla-0.9.6/`
+2. Docker 설치 및 실행
+3. OpenClaw 이미지 빌드: `docker build -t openclaw:local .`
+4. `.env.single-platoon` 생성:
+
 ```bash
-python3 bridge/platoon_bridge_server.py
+cp .env.example .env.single-platoon
+# 아래 값 설정:
+# TRUCK1_DISCORD_BOT_TOKEN=<TRUCKCLAW2 봇 토큰>
+# TRUCK3_DISCORD_BOT_TOKEN=<TRUCKCLAW3 봇 토큰>
+# OPENCLAW_IMAGE=openclaw:local
 ```
 
-### 3. CARLA 시나리오 실행
-트럭들이 도로 위에서 움직이는 물리 시뮬레이션을 시작합니다.
+### 1단계 — CARLA 실행
+
 ```bash
-# CARLA PythonAPI 경로 설정 필요
-export PYTHONPATH=$PYTHONPATH:/path/to/carla/PythonAPI/carla
-python3 scenario/examples/two_platoon_truck_scenario.py
+./carla_start.sh
 ```
 
-### 4. Discord 협상 시작
-에이전트에게 말을 걸어 협상을 시작하거나, 시나리오 터미널에서 `SPACE` 키를 눌러 수동으로 이송을 시작할 수 있습니다.
+- CARLA 0.9.6 windowed 모드로 실행
+- Town06 맵 자동 로드
+- 마우스 캡처 자동 해제 (xdotool)
+
+### 2단계 — 시나리오 실행
+
+```bash
+./run_truckclaw.sh
+```
+
+- 브리지 서버 자동 시작 (18801)
+- Docker 컨테이너 상태 표시
+- 3대 군집 CARLA 시뮬레이션 시작
+- 포트 18802에서 OpenClaw 트리거 대기
+
+### 3단계 — Discord에서 협상 시작
+
+Discord 채널 `1505104257634926602`에 입력:
+
+```
+<@1505082171050688552> 군집 목적지 확인하고 다른 차량 있으면 split 해줘
+```
+
+### 4단계 — 자동 진행
+
+이후는 에이전트가 자동으로 처리:
+
+| 단계 | 에이전트 | 행동 |
+|------|---------|------|
+| 1 | TRUCKCLAW2 | vehicle_destinations.json 읽고 목적지 목록 공유 |
+| 2 | TRUCKCLAW2 | truck_3 불일치 감지 → replicate 실행 |
+| 3 | TRUCKCLAW2 | truck_3 부팅 확인 후 @TRUCKCLAW3 호출 |
+| 4 | TRUCKCLAW3 | "분기할게" 선언 → 브리지 트리거 실행 |
+| 5 | CARLA | truck_3 차선변경 시작 |
+| 6 | CARLA | 남은 2대 x=600에서 lane=-4 진입 |
 
 ---
 
-## ⚙️ 설정 조정 (`config/simulation.json`)
+## ⌨️ 키보드 단축키 (시나리오 실행 중)
 
-주요 파라미터를 실시간으로 조정하여 테스트할 수 있습니다.
-- `sync_speed_kmh`: 군집의 기본 주행 속도.
-- `approach_fast_kmh`: 합류를 위해 접근할 때의 가속 속도.
-- `target_gap_m`: 차선 변경 전 확보할 목표 거리.
-- `merge_timeout_s`: 합류 기동의 최대 허용 시간.
+| 키 | 동작 |
+|----|------|
+| `3` | 수동 분기 트리거 (OpenClaw 없이 즉시 테스트) |
+| `r` | 시나리오 리셋 |
+| `Ctrl-C` | 종료 |
+
+---
+
+## ⚙️ 설정 파일
+
+### `config/simulation.json`
+
+| 파라미터 | 기본값 | 설명 |
+|---------|--------|------|
+| `sync_speed_kmh` | 15 | 군집 기본 주행 속도 |
+| `platoon_spacing_m` | 18 | 군집 차간 거리 |
+| `open_gap_ready_m` | 18 | 분기 전 확보할 최소 간격 |
+
+### `agents/platoon-a/data/vehicle_destinations.json`
+
+목적지 설정 파일. 여기서 각 truck의 `destination_id`를 바꾸면 분기 대상이 달라진다.
+
+```json
+{
+  "vehicles": {
+    "platoon_a_truck0": { "destination_id": "dest_a" },
+    "platoon_a_truck1": { "destination_id": "dest_a" },
+    "platoon_a_truck2": { "destination_id": "dest_b" }  ← 이게 다르면 분기
+  }
+}
+```
+
+---
+
+## 🔌 브리지 API
+
+```bash
+# 상태 확인
+python3 bridge/platoon_bridge_ctl.py snapshot
+python3 bridge/platoon_bridge_ctl.py readiness
+
+# truck_3 복제 트리거
+python3 bridge/platoon_bridge_ctl.py replicate platoon_a_truck2
+
+# 분기 트리거 (수동)
+curl -X POST http://127.0.0.1:18802/start_merge
+```
 
 ---
 
 ## ⚠️ 주의 사항
-- 시나리오는 합류 성공 시 또는 200초 경과 시 자동으로 종료됩니다.
-- 전방에 분기점이 너무 가까우면 안전을 위해 기동이 중단될 수 있습니다.
-- CARLA의 동기화 모드(Synchronous Mode)를 사용하므로 시뮬레이터와 스크립트의 틱이 일치해야 합니다.
+
+- CARLA 0.9.6 전용 (`-RenderOffScreen` 플래그 사용 불가 — segfault)
+- `BRANCH_AUTO_S = 0.0` — 자동 타이머 비활성화, OpenClaw 트리거만 사용
+- 키보드 `3`으로 수동 테스트 가능 (OpenClaw 없이)
+- CARLA 창 클릭 시 마우스 캡처됨 → `Alt+Tab`으로 포커스 전환
+

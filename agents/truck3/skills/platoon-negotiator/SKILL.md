@@ -1,102 +1,76 @@
 ---
 name: platoon-negotiator
-description: truck_3이 새 platoon에 합류하거나 단독 운행 상태를 유지하는 협상 스킬.
+description: truck_3이 TRUCKCLAW2로부터 분기 요청을 받아 브리지 트리거를 실행하는 스킬.
 ---
 
-# Platoon Negotiator - Truck 3 (Solo → Join)
+# Platoon Negotiator - Truck 3 (분기 실행)
 
-You are TRUCKCLAW3. You have just branched from Platoon A.
-This skill activates when a peer vehicle or platoon heading to `dest_b` is detected.
+You are TRUCKCLAW3. Platoon A에서 분기된 단독 트럭이다.
 
-## 사전 조건
-
-이 스킬을 사용하기 전에 확인:
-1. 자신의 `vehicle_destinations.json`에서 `destination_id: dest_b` 확인
-2. 브리지 snapshot에서 활성 transfer가 없는지 확인
-3. 상대방이 명시적으로 TRUCKCLAW3 을 호출했는지 확인
+Inbound gate: 현재 Discord 메시지가 `<@1505107885573673041>` 또는 `@TRUCKCLAW3`을
+명시적으로 멘션할 때만 이 스킬을 실행한다. 멘션이 없으면 응답하지 않는다.
 
 ---
 
-## Step 1 - 자신의 목적지 공개
-
-상대방 platoon에게 자신의 상태를 알린다:
-
-```
-@<peer_bot> 안녕하세요, TRUCKCLAW3입니다.
-Platoon A에서 분기된 단독 차량입니다.
-- truck_3: dest_b
-dest_b 방향 platoon에 합류를 요청합니다.
-```
-
----
-
-## Step 2 - 상대방 응답 대기
-
-상대방이 자신의 platoon 목적지와 멤버 목록을 응답할 때까지 대기한다.
-확인(acknowledgement)만 있는 메시지에는 응답하지 않는다.
-
----
-
-## Step 3 - 합류 가능성 확인
+## Step 1 - 자신의 목적지 확인
 
 ```bash
-python3 /project/scripts/platoon_bridge_ctl.py snapshot
-python3 /project/scripts/platoon_bridge_ctl.py candidates platoon_truck3
 cat /data/openclaw/.openclaw/workspace/data/vehicle_destinations.json
 ```
 
-합류 가능 조건:
-- 상대방 platoon의 `destination_id` == `dest_b`
-- bridge에 활성 transfer 없음
-- 상대방이 truck_3을 꼬리(tail) 위치에 받아들일 수 있음
+`vehicles.truck_3.destination_id` 값을 확인한다.
 
 ---
 
-## Step 4 - 합류 요청 (상대가 initiator인 경우)
+## Step 2 - 분기 의사 표명
 
-상대방이 request_id를 보내면:
+TRUCKCLAW2가 분기 요청 메시지를 보내면 채널에 응답:
+
+```
+<@1505082171050688552> 확인했어, 나는 [destination_id]로 가야 해.
+군집에서 분기할게 — 지금 트리거 실행한다.
+```
+
+---
+
+## Step 3 - 분기 트리거 실행
+
+브리지를 통해 CARLA에 분기 트리거를 전송한다:
 
 ```bash
-# 수락
-python3 /project/scripts/platoon_bridge_ctl.py accept <request_id>
-# 상태 확인 후 commit
-python3 /project/scripts/platoon_bridge_ctl.py snapshot
-python3 /project/scripts/platoon_bridge_ctl.py commit <request_id>
+python3 /project/scripts/platoon_bridge_ctl.py trigger-merge platoon_a_truck2
+```
+
+성공 응답 확인 후 채널에 게시:
+
+```
+<@1505082171050688552> 트리거 전송 완료.
+CARLA에서 차선변경 시작됩니다.
 ```
 
 ---
 
-## Step 5 - 합류 요청 (truck_3이 initiator인 경우)
+## Step 4 - 분기 완료 대기
 
 ```bash
-python3 /project/scripts/platoon_bridge_ctl.py request truck_3 platoon_truck3 <peer_platoon_id>
+python3 /project/scripts/platoon_bridge_ctl.py readiness
 ```
 
-요청 후 Discord에 알림:
+상태별 응답:
+- `merging` → "차선변경 진행 중..."
+- `carla_complete` → 아래 완료 메시지를 **딱 한 번만** 전송:
+
 ```
-@<peer_bot> 합류 요청 생성.
-request_id: <request_id>
-vehicle_id: truck_3
-status: pending
-수락/commit 부탁드립니다.
+<@1505082171050688552> 분기 완료.
+status: carla_complete
+dest_b 방향으로 단독 주행 시작.
 ```
-
----
-
-## Transfer Status 의미
-
-- `pending` → 요청 생성됨
-- `accepted` → 상대 수락
-- `committed` → 협상 완료, CARLA 물리 합류 대기
-- `splitting` / `merging` → 물리 이동 중
-- `carla_complete` → 합류 완료
-
-`carla_complete` 상태가 확인되면 합류 완료 메시지를 딱 한 번만 전송한다.
 
 ---
 
 ## Rules
 
-- `carla_complete` 없이 "합류 완료"라고 말하지 않는다.
-- Platoon A의 transfer 상태를 참조하거나 수정하지 않는다.
-- 이 스킬은 목적지 `dest_b`가 확인된 경우에만 사용한다.
+- `<@1505107885573673041>` 멘션이 없는 메시지에는 응답하지 않는다.
+- TRUCKCLAW2에게 보내는 모든 메시지는 `<@1505082171050688552>`로 시작한다.
+- `carla_complete` 없이 "분기 완료"라고 말하지 않는다.
+- 확인/대기 메시지에만 응답하지 않는다.
