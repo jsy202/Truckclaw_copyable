@@ -495,17 +495,4 @@ class Vehicle:
 			if distance > 0:
 				return ego_wpt.next(distance)[0].transform
 			else:
-				# CARLA 0.9.6: previous() 없음 → 직선 역방향 계산
-				import math
-				t = ego_transform
-				yaw_rad = math.radians(t.rotation.yaw)
-				pitch_rad = math.radians(t.rotation.pitch)
-				d = -distance
-				return carla.Transform(
-					carla.Location(
-						x=t.location.x + math.cos(yaw_rad) * math.cos(pitch_rad) * d,
-						y=t.location.y + math.sin(yaw_rad) * math.cos(pitch_rad) * d,
-						z=t.location.z + math.sin(pitch_rad) * d
-					),
-					t.rotation
-				)
+				return ego_wpt.previous(-1*distance)[0].transform

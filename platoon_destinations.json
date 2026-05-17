@@ -3,11 +3,19 @@
   "destinations": {
     "dest_a": {
       "label": "Upper Side Road",
-      "location": {"x": 599.1, "y": 241.2, "z": 0.0}
+      "location": {
+        "x": 599.1,
+        "y": 241.2,
+        "z": 0.0
+      }
     },
     "dest_b": {
       "label": "Lower Side Road",
-      "location": {"x": 480.3, "y": 41.7, "z": 0.0}
+      "location": {
+        "x": 480.3,
+        "y": 41.7,
+        "z": 0.0
+      }
     }
   },
   "platoons": {
@@ -16,9 +24,21 @@
       "destination_id": "dest_a",
       "status": "cruising",
       "members": [
-        {"vehicle_id": "platoon_a_truck0", "role": "leader", "destination_id": "dest_a"},
-        {"vehicle_id": "platoon_a_truck1", "role": "follower", "destination_id": "dest_b"},
-        {"vehicle_id": "platoon_a_truck2", "role": "follower", "destination_id": "dest_a"}
+        {
+          "vehicle_id": "platoon_a_truck0",
+          "role": "leader",
+          "destination_id": "dest_a"
+        },
+        {
+          "vehicle_id": "platoon_a_truck1",
+          "role": "follower",
+          "destination_id": "dest_b"
+        },
+        {
+          "vehicle_id": "platoon_a_truck2",
+          "role": "follower",
+          "destination_id": "dest_b"
+        }
       ]
     },
     "platoon_b": {
@@ -26,9 +46,21 @@
       "destination_id": "dest_b",
       "status": "cruising",
       "members": [
-        {"vehicle_id": "platoon_b_truck0", "role": "leader", "destination_id": "dest_b"},
-        {"vehicle_id": "platoon_b_truck1", "role": "follower", "destination_id": "dest_b"},
-        {"vehicle_id": "platoon_b_truck2", "role": "follower", "destination_id": "dest_b"}
+        {
+          "vehicle_id": "platoon_b_truck0",
+          "role": "leader",
+          "destination_id": "dest_b"
+        },
+        {
+          "vehicle_id": "platoon_b_truck1",
+          "role": "follower",
+          "destination_id": "dest_b"
+        },
+        {
+          "vehicle_id": "platoon_b_truck2",
+          "role": "follower",
+          "destination_id": "dest_b"
+        }
       ]
     }
   }

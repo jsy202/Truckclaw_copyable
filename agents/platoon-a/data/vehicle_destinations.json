@@ -52,13 +52,13 @@
       "platoon_id": "platoon_a",
       "local_truck_id": 1,
       "role": "follower",
-      "destination_id": "dest_b"
+      "destination_id": "dest_a"
     },
     "platoon_a_truck2": {
       "platoon_id": "platoon_a",
       "local_truck_id": 2,
       "role": "follower",
-      "destination_id": "dest_a"
+      "destination_id": "dest_b"
     },
     "platoon_b_truck0": {
       "platoon_id": "platoon_b",
