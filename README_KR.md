@@ -1,6 +1,6 @@
 # Truckclaw 🚛
 
-CARLA 0.9.6 자율주행 시뮬레이터에서 3대 트럭 군집이 주행하다가, OpenClaw AI 에이전트가 Discord를 통해 목적지를 확인하고 불일치 차량을 자동으로 분기시키는 시뮬레이션 시스템.
+CARLA 0.9.13 자율주행 시뮬레이터에서 3대 트럭(소방차) 군집이 주행하다가, OpenClaw AI 에이전트가 Discord를 통해 목적지를 확인하고 불일치 차량을 자동으로 분기시키는 시뮬레이션 시스템.
 
 ---
 
@@ -103,14 +103,14 @@ truck_3은 처음에 컨테이너가 없다. 분기가 필요할 때 truck_1의 
                            │ CARLA Python API
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                  CARLA 0.9.6  Town06  port 2000                  │
+│                  CARLA 0.9.13 Town06  port 2000                  │
 │                                                                  │
-│  truck_1 (LeadNavigator)   → 군집 선두, 15km/h 직진              │
-│  truck_2 (FollowerController CACC) → 18m 간격 유지               │
+│  truck_1 (LeadNavigator)   → 군집 선두, 10km/h 직진              │
+│  truck_2 (FollowerController CACC) → 12m 간격 유지               │
 │  truck_3 (FollowerController → PID) → 분기 시 차선변경           │
 │                                                                  │
 │  BranchCoordinator:  CRUISE → GAP → LC → DONE                   │
-│  PlatoonExitCoordinator: WAIT → LC → DONE (x=600 분기점)        │
+│                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -203,7 +203,7 @@ Truckclaw_copyable/
 
 | 항목 | 버전/경로 |
 |------|----------|
-| CARLA | 0.9.6 (`/opt/carla-0.9.6/`) |
+| CARLA | 0.9.13 (`~/carla-0.9.13/`) |
 | Python | 3.7 |
 | Docker | 20.x 이상 |
 | xdotool | `sudo apt install xdotool wmctrl` |
@@ -235,7 +235,7 @@ OPENCLAW_IMAGE=openclaw:local
 ```
 
 내부 동작:
-- CARLA 0.9.6 windowed 모드 실행 (port 2000)
+- CARLA 0.9.13 windowed 모드 실행 (port 2000)
 - Town06 맵 자동 로드
 - 포트 열릴 때까지 대기
 - xdotool로 마우스 캡처 자동 해제
@@ -303,10 +303,10 @@ Discord 채널 `1505104257634926602`에 입력:
 
 | 파라미터 | 기본값 | 설명 |
 |---------|--------|------|
-| `sync_speed_kmh` | 15 | 군집 기본 주행 속도 (km/h) |
+| `sync_speed_kmh` | 10 | 군집 기본 주행 속도 (km/h) |
 | `platoon_spacing_m` | 18 | 군집 차간 거리 (m) |
-| `open_gap_m` | 20 | 분기 전 벌릴 목표 간격 (m) |
-| `open_gap_ready_m` | 18 | 분기 시작 판정 최소 간격 (m) |
+| `open_gap_m` | 30 | 분기 전 벌릴 목표 간격 (m) |
+| `open_gap_ready_m` | 25 | 분기 시작 판정 최소 간격 (m) |
 | `normal_follow_gap_m` | 12 | 일반 추종 간격 (m) |
 
 ### `agents/platoon-a/data/vehicle_destinations.json`
@@ -412,8 +412,8 @@ WAIT → (x=600 도달) → LC → (lane=-4 안착) → DONE
 
 ## ⚠️ 알려진 제약사항
 
-- CARLA 0.9.6 전용 (`-RenderOffScreen` 플래그 사용 불가 — segfault 발생)
-- Python 3.7 필수 (CARLA 0.9.6 PythonAPI 요구사항)
+- CARLA 0.9.13 전용 (`-RenderOffScreen` 플래그 사용 불가 — segfault 발생)
+- Python 3.7 필수 (CARLA 0.9.13 PythonAPI 요구사항)
 - CARLA 창 클릭 시 마우스 캡처됨 → `Alt+Tab`으로 포커스 전환
 - `BRANCH_AUTO_S = 0.0` — 자동 타이머 없음, 반드시 OpenClaw 또는 키보드 `3`으로 트리거
 - truck_1(리더) 분기는 지원하지 않음 (팔로워만 분기 가능)
