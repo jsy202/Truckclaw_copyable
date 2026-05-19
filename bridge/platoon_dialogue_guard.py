@@ -15,15 +15,15 @@ import sys
 AGENTS = {
     "platoon_a": {
         "name": "TRUCKCLAW2",
-        "own_mention": "<@1479297673432399923>",
+        "own_mention": "<@1505082171050688552>",
         "own_display_mention": "@TRUCKCLAW2",
-        "peer_mention": "<@1479297098938585170>",
+        "peer_mention": "<@1505107885573673041>",
     },
     "platoon_b": {
-        "name": "TRUCKCLAW1",
-        "own_mention": "<@1479297098938585170>",
-        "own_display_mention": "@TRUCKCLAW1",
-        "peer_mention": "<@1479297673432399923>",
+        "name": "TRUCKCLAW3",
+        "own_mention": "<@1505107885573673041>",
+        "own_display_mention": "@TRUCKCLAW3",
+        "peer_mention": "<@1505082171050688552>",
     },
 }
 

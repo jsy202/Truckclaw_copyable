@@ -32,6 +32,8 @@ services:
     environment:
       TRUCK_ID: truck1
       OPENCLAW_DATA_DIR: /data/openclaw
+      OPENCLAW_HOST_DATA_DIR: ${TRUCK1_CONFIG_DIR:-/home/user/Downloads/Truckclaw_copyable/.openclaw-truck1}
+      HOST_PROJECT_ROOT: /home/user/Downloads/Truckclaw_copyable
       DISCORD_BOT_TOKEN: ${TRUCK1_DISCORD_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${TRUCK1_OPENCLAW_GATEWAY_TOKEN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -45,6 +47,20 @@ services:
       # 브리지 스크립트 + 복제기
       - ./bridge:/project/scripts:ro
       - ./openclaw_migration:/project/openclaw_migration:ro
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - sp-bridge-server
+
+  # ── vehicle-truck2 (더미) ────────────────────────────────────────────
+  # truck_2 는 순수 CACC 팔로워 — OpenClaw 없음
+  # watch_truck2.py 가 telemetry.log 를 읽어 제어값을 표시
+  vehicle-truck2:
+    image: python:3.10-slim
+    container_name: vehicle-truck2
+    command: >
+      sh -c "echo '[vehicle-truck2] CACC 팔로워 — OpenClaw 없음' &&
+             tail -f /dev/null"
     network_mode: host
     restart: unless-stopped
     depends_on:

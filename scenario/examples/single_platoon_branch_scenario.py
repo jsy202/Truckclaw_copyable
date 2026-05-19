@@ -28,11 +28,11 @@ from enum import Enum, auto
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-# ── CARLA 0.9.6 경로 ─────────────────────────────────────────────────────────
-CARLA_EGG = "/opt/carla-0.9.6/PythonAPI/carla/dist/carla-0.9.6-py3.5-linux-x86_64.egg"
-CARLA_API = "/opt/carla-0.9.6/PythonAPI/carla"
-for p in (CARLA_EGG, CARLA_API):
-    if p not in sys.path: sys.path.insert(0, p)
+# ── CARLA 경로 (자동 감지 또는 시스템 설치 선호) ──────────────────────────────
+# CARLA_EGG = "/opt/carla-0.9.6/PythonAPI/carla/dist/carla-0.9.6-py3.5-linux-x86_64.egg"
+# CARLA_API = "/opt/carla-0.9.6/PythonAPI/carla"
+# for p in (CARLA_EGG, CARLA_API):
+#     if p not in sys.path: sys.path.insert(0, p)
 
 import carla
 import numpy as np
@@ -50,15 +50,15 @@ _spd  = _CFG["speeds"]; _gap = _CFG["gaps"]; _sp = _CFG["spawns"]
 DT                  = 0.01
 SAMPLING_RATE       = 10
 PLATOON_SIZE        = 3
-SYNC_SPEED_KMH      = float(_spd["sync_speed_kmh"])          # 18
-MERGE_MIN_SPEED_KMH = float(_spd["merge_min_speed_kmh"])     # 15
-NORMAL_FOLLOW_GAP_M = float(_gap["normal_follow_gap_m"])     # 12
-OPEN_GAP_M          = float(_gap["open_gap_m"])              # 20
-OPEN_GAP_READY_M    = float(_gap["open_gap_ready_m"])       # 18
-TARGET_GAP_M        = float(_gap["target_gap_m"])            # 13
-PLATOON_SPACING_M   = float(_gap["platoon_spacing_m"])       # 18
+SYNC_SPEED_KMH      = 20.0
+MERGE_MIN_SPEED_KMH = 15.0
+NORMAL_FOLLOW_GAP_M = 15.0                                   # ⚠️ 고속 대응
+OPEN_GAP_M          = 20.0
+OPEN_GAP_READY_M    = 15.0                                   # ⚠️ 단축
+TARGET_GAP_M        = 13.0
+PLATOON_SPACING_M   = 20.0
 LANE_STEP_COMPLETE_M = 0.9
-GAP_STABLE_TICKS    = 50
+GAP_STABLE_TICKS    = 10                                     # ⚠️ 빠른 전환
 
 BRIDGE_URL   = "http://127.0.0.1:18801"
 TRIGGER_PORT = 18802
@@ -71,8 +71,9 @@ PLATOON_SPAWN = carla.Transform(
 )
 
 # ── 이벤트 ────────────────────────────────────────────────────────────────────
-_branch_trigger_event = threading.Event()
+_branch_trigger_event  = threading.Event()
 _branch_complete_event = threading.Event()
+_replicate_only_event  = threading.Event()  # 복제만 시작 (분기는 truck3 부팅 후 자동)
 
 # ── improve 헬퍼 함수 그대로 ──────────────────────────────────────────────────
 def _yaw_diff(a, ref):
@@ -157,23 +158,31 @@ def compute_lead_route(cmap, loc, dist=3000.0, step=5.0):
     return route
 
 def _make_pid(carla_vehicle):
-    lat = {"K_P": 3.2, "K_I": 0.1,  "K_D": 0.25, "dt": DT}
-    lon = {"K_P": 0.65, "K_I": 0.15, "K_D": 0.05, "dt": DT}
+    lat = {"K_P": 5.5, "K_I": 0.2,  "K_D": 0.4, "dt": DT}   # ⚠️ 강력한 조향
+    lon = {"K_P": 1.0, "K_I": 0.2,  "K_D": 0.05, "dt": DT}  # ⚠️ 종방향 응답성 강화
     return nav_controller.VehiclePIDController(
         carla_vehicle, args_lateral=lat, args_longitudinal=lon,
-        max_brake=0.4, max_throttle=0.8,
+        max_brake=0.4, max_throttle=1.0,                    # ⚠️ 가속력 최대
     )
 
 # ── 브리지 헬퍼 ───────────────────────────────────────────────────────────────
 import subprocess
 
 def _get_docker_status():
+    """각 트럭별 docker 상태 반환: {"truck1": "Up 2m", "truck3": "없음", ...}"""
+    result = {"truck1": "없음", "truck3": "없음"}
     try:
-        r = subprocess.run(["docker", "ps", "--filter", "name=openclaw", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=1)
-        containers = r.stdout.strip().split("\n")
-        return [c for c in containers if c]
-    except:
-        return []
+        for name in ("openclaw-truck1", "openclaw-truck3"):
+            r = subprocess.run(
+                ["docker", "ps", "--all", "--filter", f"name=^/{name}$",
+                 "--format", "{{.Status}}"],
+                capture_output=True, text=True, timeout=1)
+            s = r.stdout.strip()
+            key = "truck1" if "truck1" in name else "truck3"
+            result[key] = s if s else "없음"
+    except Exception:
+        pass
+    return result
 
 def _bridge_post(path, body=None):
     try:
@@ -199,6 +208,9 @@ def _start_trigger_server():
             if self.path.rstrip("/") in ("/start_merge", "/branch"):
                 _branch_trigger_event.set()
                 print("\n[18802] 분기 트리거 수신!")
+            elif self.path.rstrip("/") == "/start_replicate":
+                _replicate_only_event.set()
+                print("\n[18802] 복제 전용 트리거 수신 (분기는 truck3 부팅 후 자동)")
             elif "/complete" in self.path:
                 _branch_complete_event.set()
         def log_message(self, *a): pass
@@ -236,6 +248,7 @@ class BranchState(Enum):
     MIGRATE = auto()
     GAP    = auto()
     LC     = auto()
+    SIDE_BY_SIDE = auto()  # ⚠️ 나란히 가기 상태 추가
     DONE   = auto()
 
 class BranchCoordinator:
@@ -281,13 +294,19 @@ class BranchCoordinator:
                 self.state = BranchState.GAP
         elif self.state == BranchState.GAP:    self._update_gap()
         elif self.state == BranchState.LC:     self._update_lc()
+        elif self.state == BranchState.SIDE_BY_SIDE: self._update_side_by_side()
 
     def _start_migrate(self):
         print("\n[branch] 분기 트리거!")
         _bridge_post("/branch", {"vehicle":"truck2","status":"started"})
         if self.replicator:
-            self.replicator.replicate(blocking=False)
-            self.state = BranchState.MIGRATE
+            if self.replicator.wait(timeout=0):
+                # 복제가 이미 완료됨 (watch_truck3 자동 트리거 경로)
+                print("[branch] 복제 이미 완료 → 바로 GAP 확보 시작")
+                self.state = BranchState.GAP
+            else:
+                self.replicator.replicate(blocking=False)
+                self.state = BranchState.MIGRATE
         else:
             print("[branch] replicator 없음 — OpenClaw 복제 스킵")
             self.state = BranchState.GAP
@@ -314,9 +333,9 @@ class BranchCoordinator:
 
         ego_wpt = self.cmap.get_waypoint(self._v.get_location())
         if ego_wpt:
-            target_wpt = _advance_waypoint(ego_wpt, 20.0)
-            # truck2 감속 (60% 속도)
-            ctrl = self._pid.run_step(SYNC_SPEED_KMH * 0.6, target_wpt)
+            target_wpt = _advance_waypoint(ego_wpt, 10.0)    # ⚠️ 20m -> 10m (응답성)
+            # truck2 감속 (40% 속도) 하여 빠르게 간격 벌림
+            ctrl = self._pid.run_step(SYNC_SPEED_KMH * 0.4, target_wpt)
             self._v.apply_control(ctrl)
 
         self.last_status = f"gap={gap:.1f}/{OPEN_GAP_READY_M}m ok={self._gap_ok}"
@@ -345,24 +364,67 @@ class BranchCoordinator:
         ego_wpt = self.cmap.get_waypoint(ego_loc)
         
         # 목표 차선 추적
-        target_wpt = _advance_waypoint(self._target_lane_wpt, 20.0)
+        target_wpt = _advance_waypoint(self._target_lane_wpt, 8.0)  # ⚠️ 20m -> 8m (날카로운 조향)
         self._target_lane_wpt = _advance_waypoint(self._target_lane_wpt, self._v.speed * DT)
         
-        ctrl = self._pid.run_step(SYNC_SPEED_KMH, target_wpt)
+        # 분기 시 속도 유지 또는 약간 가속
+        v_cmd = SYNC_SPEED_KMH * 1.1
+        ctrl = self._pid.run_step(v_cmd, target_wpt)
         self._v.apply_control(ctrl)
 
         # 차선 변경 완료 판정
         if ego_wpt.road_id == self._target_lane_id[0] and ego_wpt.lane_id == self._target_lane_id[1]:
-            print(f"[branch] 차선 변경 완료 → DONE")
-            self._finalize()
+            print(f"[branch] 차선 변경 완료 → SIDE_BY_SIDE (나란히 가기 시작)")
+            self.state = BranchState.SIDE_BY_SIDE
+            self._ticks = 0
             return
 
         if self._ticks > 2000:
-            print(f"[branch] LC 타임아웃 → DONE 강제 전환")
-            self._finalize()
+            print(f"[branch] LC 타임아웃 → SIDE_BY_SIDE 강제 전환")
+            self.state = BranchState.SIDE_BY_SIDE
+            self._ticks = 0
             return
 
         self.last_status = f"LC ticks={self._ticks}"
+
+    def _update_side_by_side(self):
+        self._ticks += 1
+        lead_v = self.platoon[0]
+        
+        # ⚠️ 따라잡기를 돕기 위해 원래 군집의 속도를 잠시 늦춤
+        if lead_v.controller.target_speed > SYNC_SPEED_KMH * 0.75:
+            lead_v.controller.set_target_speed(SYNC_SPEED_KMH * 0.75)
+        
+        # 목표 차선(옆 차선) 유지
+        target_wpt = _advance_waypoint(self._target_lane_wpt, 15.0)
+        self._target_lane_wpt = _advance_waypoint(self._target_lane_wpt, self._v.speed * DT)
+        
+        # ⚠️ 위치 오차 계산 (longitudinal offset)
+        off = signed_longitudinal_offset(lead_v, self._v)
+        
+        # ⚠️ 공격적인 따라잡기 로직 (Catch-up)
+        # 리더보다 뒤에 있으면(off > 2.0) 최대 120km/h까지 가속하여 빠르게 정렬
+        if off > 2.0:
+            v_cmd = SYNC_SPEED_KMH * 2.0        # 따라잡기: 동기 속도의 2배
+            self._ticks = 0                     # 정렬될 때까지 시간 카운트 리셋
+        elif off < -2.0:
+            v_cmd = lead_v.speed * 3.6 - 10.0   # 너무 앞서면 감속
+        else:
+            v_cmd = lead_v.speed * 3.6          # 유지
+            
+        v_cmd = np.clip(v_cmd, 5.0, SYNC_SPEED_KMH * 2.0)
+        ctrl = self._pid.run_step(float(v_cmd), target_wpt)
+        self._v.apply_control(ctrl)
+        
+        # 정렬된 상태(off < 2.5)가 5초(500틱) 유지되면 최종 분리
+        if abs(off) < 2.5 and self._ticks > 500:
+            print("[branch] 나란히 주행 완료 → DONE (최종 분리)")
+            # 속도 원복
+            lead_v.controller.set_target_speed(SYNC_SPEED_KMH)
+            self._finalize()
+            return
+            
+        self.last_status = f"SIDE_BY_SIDE off={off:.1f}m v={v_cmd:.1f} ticks={self._ticks}"
 
     def _finalize(self):
         # 분리된 truck2에게 LeadNavigator 부여하여 계속 주행하게 함
@@ -378,27 +440,34 @@ class BranchCoordinator:
     def status_line(self):
         return f"{self.state.name} {self.last_status}"
 
-# ── openclaw cleanup ─────────────────────────────────────────────────────────
-def _start_cleanup_watcher(old_container):
-    def _watch():
-        _branch_complete_event.wait()
-        time.sleep(2.0)
-        try:
-            from replicator import delete_old_openclaw
-            delete_old_openclaw(old_container)
-        except Exception as e:
-            print(f"[cleanup] 실패: {e}")
-    threading.Thread(target=_watch, daemon=True).start()
-
-# ── SmoothCamera (improve 그대로) ────────────────────────────────────────────
+# ── SmoothCamera (개선: 두 군집을 모두 담기 위해 중간 지점 추적) ──────────────────
 class SmoothCamera:
-    def __init__(self, s): self.s = s; self.x = self.y = None
-    def update(self, t):
-        loc = t.get_location()
-        if self.x is None: self.x, self.y = loc.x, loc.y
-        self.x += 0.05 * (loc.x - self.x); self.y += 0.05 * (loc.y - self.y)
+    def __init__(self, s, coordinator): 
+        self.s = s
+        self.coord = coordinator
+        self.x = self.y = None
+        
+    def update(self, _unused_target):
+        # ⚠️ 나란히 가는 상황에서는 두 차량의 중간 지점을 추적
+        lead_v = self.coord.platoon[0]
+        branch_v = self.coord._v
+        
+        if branch_v and self.coord.state == BranchState.SIDE_BY_SIDE:
+            l1 = lead_v.get_location()
+            l2 = branch_v.get_location()
+            # 중간 지점
+            tx, ty = (l1.x + l2.x) / 2, (l1.y + l2.y) / 2
+            z_offset = 75  # 나란히 주행 시 약간 더 높게
+        else:
+            loc = lead_v.get_location()
+            tx, ty = loc.x, loc.y
+            z_offset = 60
+            
+        if self.x is None: self.x, self.y = tx, ty
+        self.x += 0.05 * (tx - self.x); self.y += 0.05 * (ty - self.y)
+        
         self.s.set_transform(carla.Transform(
-            carla.Location(x=self.x, y=self.y, z=loc.z + 85),
+            carla.Location(x=self.x, y=self.y, z=lead_v.get_location().z + z_offset),
             carla.Rotation(pitch=-90),
         ))
 
@@ -430,6 +499,19 @@ def main():
     p.add_argument("--no-openclaw",    action="store_true")
     p.add_argument("--auto-trigger-s", type=float, default=0.0)
     args = p.parse_args()
+
+    # ── watch 스크립트 로그 초기화 (이전 실행 잔존 방지) ────────────────────────
+    _watch_logs = [
+        _PROJECT / ".transfer" / "telemetry.log",
+        _PROJECT / ".transfer" / "tx" / ".progress.log",
+        _PROJECT / ".transfer" / "rx" / ".progress.log",
+    ]
+    for _p in _watch_logs:
+        try:
+            if _p.exists():
+                _p.write_text("")
+        except Exception:
+            pass
 
     _bridge_reload()
     _start_trigger_server()
@@ -484,9 +566,8 @@ def main():
             print("[main] replicator 없음 — OpenClaw 스킵")
 
     coord  = BranchCoordinator(platoon, cmap, sim, replicator=replicator)
-    camera = SmoothCamera(sim.spectator)
+    camera = SmoothCamera(sim.spectator, coord)
     kb     = KeyInput()
-    _start_cleanup_watcher("openclaw-truck2")
 
     step = 0; auto_triggered = False
 
@@ -511,15 +592,37 @@ def main():
             if _branch_trigger_event.is_set() and coord.state == BranchState.CRUISE:
                 _branch_trigger_event.clear(); coord.trigger()
 
+            # 복제 전용 트리거: 분기는 watch_truck3 가 openclaw-truck3 부팅 후 /start_merge 전송
+            if _replicate_only_event.is_set() and replicator and not replicator.wait(timeout=0):
+                _replicate_only_event.clear()
+                print("\n[복제] OpenClaw 복제 시작 (분기는 truck3 부팅 후 자동 발동)")
+                replicator.replicate(blocking=False)
+
             coord.update(step)
             sim.run_step(mode="sample" if step % SAMPLING_RATE == 0 else "control")
             sim.tick()
-            camera.update(coord.camera_target())
+            camera.update(None)
 
             if step % 100 == 0:
                 d_status = _get_docker_status()
-                d_str = f"[{', '.join(d_status)}]" if d_status else "[No Containers]"
-                print(f"t={step*DT:6.1f}s speeds=({speeds()}) gaps=({gaps()}) docker={d_str} state={coord.status_line()}")
+                t1_doc = "Up" if "Up" in d_status["truck1"] else "없음"
+                t3_doc = "Up" if "Up" in d_status["truck3"] else "없음"
+                branch_state = coord.state.name
+                telem = (
+                    f"t={step*DT:6.1f}s "
+                    f"speeds=({speeds()}) "
+                    f"gaps=({gaps()}) "
+                    f"truck1=[openclaw:{t1_doc}] "
+                    f"truck2=[none] "
+                    f"truck3=[openclaw:{t3_doc}] "
+                    f"state={branch_state}"
+                )
+                print(telem)
+                # watch 스크립트들이 읽는 텔레메트리 로그
+                _telem_log = _PROJECT / ".transfer" / "telemetry.log"
+                _telem_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(_telem_log, "a") as _tf:
+                    _tf.write(telem + "\n")
 
             if coord.state == BranchState.DONE and not auto_triggered:
                 print("[main] 분기 완료! 계속 주행...")
@@ -529,6 +632,13 @@ def main():
     finally:
         kb.restore()
         sim.release_synchronous()
+        # watch 스크립트 로그 초기화 (Ctrl+C 후 재시작 시 잔존 방지)
+        for _p in _watch_logs:
+            try:
+                if _p.exists():
+                    _p.write_text("")
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()

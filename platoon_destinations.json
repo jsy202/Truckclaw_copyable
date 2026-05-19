@@ -32,7 +32,7 @@
         {
           "vehicle_id": "platoon_a_truck1",
           "role": "follower",
-          "destination_id": "dest_b"
+          "destination_id": "dest_a"
         },
         {
           "vehicle_id": "platoon_a_truck2",

@@ -1,6 +1,6 @@
 #!/bin/bash
 # CARLA 시나리오 실행 스크립트 (no-rendering Docker 환경용)
-cd /home/jsy/Truckclaw-improve
+cd /home/user/Downloads/Truckclaw_copyable
 
 # CARLA PythonAPI 경로 자동 탐색
 for path in \

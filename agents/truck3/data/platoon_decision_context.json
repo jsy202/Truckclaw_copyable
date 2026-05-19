@@ -5,11 +5,11 @@
   "bot_display_name": "TRUCKCLAW3",
   "platoon_id": "platoon_truck3",
   "role": "solo",
-  "discord_channel_id": "1505104257634926602",
+  "discord_channel_id": "1503300024858050602",
   "discord": {
-    "channel_id": "1505104257634926602",
-    "own_discord_id": "<@1505107885573673041>",
-    "peer_discord_id": "<@1505082171050688552>"
+    "channel_id": "1503300024858050602",
+    "own_discord_id": "<@1479297098938585170>",
+    "peer_discord_id": "<@1479297673432399923>"
   },
   "bridge": {
     "base_url": "http://127.0.0.1:18801",

@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CARLA_PORT=2000
 BRIDGE_PORT=18801
 TRIGGER_PORT=18802
-PYAPI="/opt/carla-0.9.6/PythonAPI/carla/dist/carla-0.9.6-py3.5-linux-x86_64.egg"
-PYAPI_DIR="/opt/carla-0.9.6/PythonAPI/carla"
+# PYAPI="/opt/carla-0.9.6/PythonAPI/carla/dist/carla-0.9.6-py3.5-linux-x86_64.egg"
+PYAPI_DIR="/home/user/carla_source/PythonAPI/carla"
 ENV_FILE="$SCRIPT_DIR/.env.single-platoon"
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
@@ -39,7 +39,7 @@ if curl -s http://127.0.0.1:$BRIDGE_PORT/health &>/dev/null; then
     ok "브리지 서버 실행 중"
 else
     log "브리지 서버 시작 중..."
-    python3.7 "$SCRIPT_DIR/bridge/platoon_bridge_server.py" &
+    python3 "$SCRIPT_DIR/bridge/platoon_bridge_server.py" &
     BRIDGE_PID=$!
     sleep 2
     if curl -s http://127.0.0.1:$BRIDGE_PORT/health &>/dev/null; then
@@ -115,4 +115,4 @@ echo -e "  브리지: ${CYAN}http://127.0.0.1:$BRIDGE_PORT/snapshot${NC}"
 echo -e "  트리거: POST http://127.0.0.1:$TRIGGER_PORT/start_merge"
 echo -e "${BOLD}════════════════════════════════════════════${NC}"
 echo ""
-python3.7 "$SCRIPT_DIR/scenario/examples/single_platoon_branch_scenario.py"
+python3 "$SCRIPT_DIR/scenario/examples/single_platoon_branch_scenario.py"
