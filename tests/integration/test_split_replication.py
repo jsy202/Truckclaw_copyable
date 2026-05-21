@@ -65,7 +65,6 @@ def test_docker_run_failure_marks_replication_failed(replicator, tmp_path, fake_
     assert rep._success is False and rep._done_event.is_set()
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C01: wait() returns 'done' even when replication FAILED, so callers cannot tell failure from success")
 def test_wait_reports_failure_after_failed_replication(replicator, tmp_path, fake_docker):
     # REQ: BranchReplicator.wait() must be True only for a successful replication.
     fake_docker.fail("save")
@@ -161,7 +160,6 @@ def test_coordinator_advances_to_gap_after_successful_replication(scenario, repl
     assert ("/branch", {"vehicle": "truck2", "status": "started"}) in scenario._test_posts
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C06: after a FAILED replication the coordinator still proceeds to GAP (physical split with no agent)")
 def test_split_does_not_proceed_when_replication_fails(scenario, replicator, tmp_path, fake_docker):
     # REQ: the physical split must not start unless the branch agent was replicated successfully;
     # the failure is reported and the vehicle stays in the platoon.

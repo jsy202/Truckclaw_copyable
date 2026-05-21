@@ -292,6 +292,8 @@ class BranchCoordinator:
                 self.state = BranchState.GAP
             elif self.replicator is None:
                 self.state = BranchState.GAP
+            elif self.replicator.finished():
+                self._abort_branch("OpenClaw 복제 실패")
         elif self.state == BranchState.GAP:    self._update_gap()
         elif self.state == BranchState.LC:     self._update_lc()
         elif self.state == BranchState.SIDE_BY_SIDE: self._update_side_by_side()
@@ -310,6 +312,14 @@ class BranchCoordinator:
         else:
             print("[branch] replicator 없음 — OpenClaw 복제 스킵")
             self.state = BranchState.GAP
+
+    def _abort_branch(self, reason):
+        # 물리 분리 전(MIGRATE)이므로 truck2는 아직 군집 안 — CRUISE 복귀, 실패를 브리지에 보고
+        print(f"[branch] {reason} → 분기 중단 (truck2 군집 유지)")
+        _bridge_post("/branch", {"vehicle":"truck2","status":"failed"})
+        self.triggered = False
+        self.state = BranchState.CRUISE
+        self.last_status = reason
 
     def _update_gap(self):
         if self._v is None:

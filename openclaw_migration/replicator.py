@@ -178,6 +178,9 @@ class BranchReplicator:
         self._success            = False
 
     def replicate(self, blocking=True):
+        # 새 실행: 이전 실행(실패 포함)의 완료 상태를 초기화
+        self._done_event.clear()
+        self._success = False
         if blocking:
             self._run()
         else:
@@ -186,7 +189,12 @@ class BranchReplicator:
         return True
 
     def wait(self, timeout=120.0):
-        return self._done_event.wait(timeout=timeout)
+        """완료되었고 '성공'한 경우에만 True (실패/진행 중이면 False)."""
+        return self._done_event.wait(timeout=timeout) and self._success
+
+    def finished(self):
+        """성공/실패와 무관하게 복제 작업이 끝났는지."""
+        return self._done_event.is_set()
 
     def _run(self):
         tx_dir = self.transfer_dir / "tx"
