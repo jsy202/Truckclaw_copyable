@@ -170,10 +170,9 @@ def test_split_does_not_proceed_when_replication_fails(scenario, replicator, tmp
     assert ("/branch", {"vehicle": "truck2", "status": "failed"}) in scenario._test_posts
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C07: no MIGRATE timeout; a hung docker call blocks the split forever")
 def test_coordinator_times_out_hung_replication(scenario, replicator, tmp_path, fake_docker, monkeypatch):
     # REQ: a replication that never finishes must not block the branch forever.
-    monkeypatch.setattr(scenario, "MIGRATE_TIMEOUT_S", 0.3, raising=False)
+    monkeypatch.setattr(scenario, "MIGRATE_TIMEOUT_S", 0.3)  # default 120 s, shortened for the test
     fake_docker.hang("save", seconds=3.0)
     coord = _coordinator(scenario, _template_replicator(replicator, tmp_path))
     _pump(coord, 1.5)

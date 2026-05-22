@@ -59,6 +59,7 @@ TARGET_GAP_M        = 13.0
 PLATOON_SPACING_M   = 20.0
 LANE_STEP_COMPLETE_M = 0.9
 GAP_STABLE_TICKS    = 10                                     # ⚠️ 빠른 전환
+MIGRATE_TIMEOUT_S   = 120.0                                  # BranchReplicator.wait() 기본값과 동일
 
 BRIDGE_URL   = "http://127.0.0.1:18801"
 TRIGGER_PORT = 18802
@@ -294,6 +295,8 @@ class BranchCoordinator:
                 self.state = BranchState.GAP
             elif self.replicator.finished():
                 self._abort_branch("OpenClaw 복제 실패")
+            elif time.monotonic() - self._migrate_started > MIGRATE_TIMEOUT_S:
+                self._abort_branch(f"OpenClaw 복제 {MIGRATE_TIMEOUT_S:g}s 초과")
         elif self.state == BranchState.GAP:    self._update_gap()
         elif self.state == BranchState.LC:     self._update_lc()
         elif self.state == BranchState.SIDE_BY_SIDE: self._update_side_by_side()
@@ -307,6 +310,7 @@ class BranchCoordinator:
                 print("[branch] 복제 이미 완료 → 바로 GAP 확보 시작")
                 self.state = BranchState.GAP
             else:
+                self._migrate_started = time.monotonic()
                 self.replicator.replicate(blocking=False)
                 self.state = BranchState.MIGRATE
         else:
