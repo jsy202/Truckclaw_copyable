@@ -114,7 +114,6 @@ def test_scenario_branch_agent_dir_exists_in_repo():
     assert (template / "AGENTS.md").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C05: a second replicate() while one is running starts a second concurrent replication")
 def test_concurrent_replicate_calls_run_once(replicator, tmp_path, fake_docker):
     # REQ: one split = one replication; duplicate requests while in progress are ignored.
     fake_docker.hang("save", seconds=0.5)

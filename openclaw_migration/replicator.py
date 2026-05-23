@@ -176,11 +176,18 @@ class BranchReplicator:
         
         self._done_event         = threading.Event()
         self._success            = False
+        self._running            = False
+        self._state_lock         = threading.Lock()
 
     def replicate(self, blocking=True):
-        # 새 실행: 이전 실행(실패 포함)의 완료 상태를 초기화
-        self._done_event.clear()
-        self._success = False
+        with self._state_lock:
+            if self._running:
+                # 이미 복제 진행 중 (예: /start_replicate 후 분기 트리거) — 중복 실행하지 않음
+                return True
+            self._running = True
+            # 새 실행: 이전 실행(실패 포함)의 완료 상태를 초기화
+            self._done_event.clear()
+            self._success = False
         if blocking:
             self._run()
         else:
@@ -250,6 +257,8 @@ class BranchReplicator:
             self._success = False
         finally:
             _tlog.logfile = None
+            with self._state_lock:
+                self._running = False
             self._done_event.set()
 
     def _load_and_run(self, rx_image, rx_config):
