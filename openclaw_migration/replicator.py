@@ -190,10 +190,10 @@ class BranchReplicator:
             self._success = False
         if blocking:
             self._run()
-        else:
-            t = threading.Thread(target=self._run, daemon=True)
-            t.start()
-        return True
+            return self._success   # 동기 실행: 실제 성공 여부 (CLI 종료 코드에 사용)
+        t = threading.Thread(target=self._run, daemon=True)
+        t.start()
+        return True                # 비동기: "시작됨" — 결과는 wait()/finished()로 확인
 
     def wait(self, timeout=120.0):
         """완료되었고 '성공'한 경우에만 True (실패/진행 중이면 False)."""

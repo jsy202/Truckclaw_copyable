@@ -73,7 +73,6 @@ def test_wait_reports_failure_after_failed_replication(replicator, tmp_path, fak
     assert rep.wait(timeout=0) is False
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C02: CLI main() exits 0 after a failed replication (replicate() always returns True)")
 def test_cli_exit_code_reflects_replication_failure(replicator, tmp_path, fake_docker, monkeypatch):
     # REQ: the standalone tool must signal failure through its exit code.
     fake_docker.fail("save")
