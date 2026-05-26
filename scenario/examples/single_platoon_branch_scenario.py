@@ -571,7 +571,7 @@ def main():
             from replicator import BranchReplicator
             replicator = BranchReplicator(
                 source_truck_id="truck0", branch_truck_id="truck2",
-                branch_agent_dir=_PROJECT / "agents" / "truck2",
+                branch_agent_dir=_PROJECT / "agents" / "truck3",   # 저장소에 있는 분기 agent 템플릿 (replicator 기본값과 동일)
                 source_openclaw_data_dir=_PROJECT / ".openclaw-truck0",
                 branch_openclaw_data_dir=_PROJECT / ".openclaw-truck2",
             )

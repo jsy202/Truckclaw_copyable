@@ -93,7 +93,6 @@ def test_replication_fails_when_identity_template_missing(replicator, tmp_path, 
     assert "run" not in fake_docker.subcommands()
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C04: the scenario constructs BranchReplicator with branch_agent_dir=agents/truck2, which does not exist; the clone gets no identity files")
 def test_scenario_branch_agent_dir_exists_in_repo():
     # REQ: the identity template the scenario actually passes must exist in the repository.
     # Static contract check (AST of single_platoon_branch_scenario.py main()); CARLA is not needed.
