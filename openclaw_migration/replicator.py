@@ -143,11 +143,14 @@ def create_config_bundle(output_path, truck1_agent_dir, truck3_template_dir):
                 _print(f"  [{action:5s}] {rel}")
             else:
                 _print(f"  [SKIP ] {rel}")
+        missing = [rel for rel in IDENTITY_FILES if not (truck3_template_dir / rel).exists()]
+        if missing:
+            # 정체성 파일 없이 복제된 agent는 잘못된 차량/목적지로 동작할 수 있음 — 복제 실패로 처리
+            raise RuntimeError(f"identity template incomplete ({truck3_template_dir}): missing {', '.join(missing)}")
         for rel in IDENTITY_FILES:
             src = truck3_template_dir / rel; dst = tmp / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            if src.exists():
-                shutil.copy2(src, dst); _print(f"  [id   ] {rel}")
+            shutil.copy2(src, dst); _print(f"  [id   ] {rel}")
             else:
                 _print(f"  [SKIP ] {rel}")
         with tarfile.open(output_path, "w:gz") as tar:

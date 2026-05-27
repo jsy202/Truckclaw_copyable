@@ -83,7 +83,6 @@ def test_cli_exit_code_reflects_replication_failure(replicator, tmp_path, fake_d
     assert replicator.main() == 1
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C03: replication 'succeeds' with no identity files when the identity template dir is missing")
 def test_replication_fails_when_identity_template_missing(replicator, tmp_path, fake_docker):
     # REQ: a replicated agent must not start without its identity files (AGENTS.md, destinations, decision context).
     rep = scenario_replicator(replicator, tmp_path)   # agents/truck2 does not exist in the repo
@@ -175,3 +174,11 @@ def test_coordinator_times_out_hung_replication(scenario, replicator, tmp_path, 
     _pump(coord, 1.5)
     assert coord.state.name == "CRUISE"
     assert ("/branch", {"vehicle": "truck2", "status": "failed"}) in scenario._test_posts
+
+
+def test_replication_fails_when_one_identity_file_is_missing(replicator, tmp_path, fake_docker):
+    (tmp_path / "agents" / "truck3" / "data" / "vehicle_destinations.json").unlink()
+    rep = _template_replicator(replicator, tmp_path)
+    rep.replicate(blocking=True)
+    assert rep._success is False
+    assert "run" not in fake_docker.subcommands()
