@@ -151,8 +151,6 @@ def create_config_bundle(output_path, truck1_agent_dir, truck3_template_dir):
             src = truck3_template_dir / rel; dst = tmp / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst); _print(f"  [id   ] {rel}")
-            else:
-                _print(f"  [SKIP ] {rel}")
         with tarfile.open(output_path, "w:gz") as tar:
             tar.add(tmpdir, arcname=".")
     _print(f"  완료: {output_path.stat().st_size/1024:.1f} KB")
