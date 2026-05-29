@@ -76,6 +76,7 @@ def _initial_readiness():
     }
 
 _readiness: dict = _initial_readiness()
+_branch: dict = {}   # 분기(split) 진행 보고: {vehicle, status, updated_at} — 시나리오가 POST /branch로 보고
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -227,8 +228,9 @@ class Handler(BaseHTTPRequestHandler):
         p = self.path.rstrip("/")
         with _lock:
             if p == "/health": self._ok({"ok": True})
-            elif p == "/snapshot": self._ok({"platoons": _platoons, "transfers": _transfers, "readiness": _readiness})
+            elif p == "/snapshot": self._ok({"platoons": _platoons, "transfers": _transfers, "readiness": _readiness, "branch": _branch})
             elif p == "/readiness": self._ok(_readiness)
+            elif p == "/branch": self._ok(_branch)
             elif p.startswith("/transfers/"):
                 rid = p.split("/")[-1]
                 t = _transfers.get(rid)
@@ -256,8 +258,16 @@ class Handler(BaseHTTPRequestHandler):
                 _platoons = _load_initial_state()
                 _transfers = {}
                 _readiness = _initial_readiness()
+                _branch.clear()
                 _readiness["updated_at"] = _now()
                 self._ok({"ok": True})
+            elif p == "/branch":
+                # 시나리오 분기 진행 보고: {"vehicle": "truck2", "status": "started|complete|failed"}
+                status = body.get("status")
+                if not body.get("vehicle") or status not in ("started", "complete", "failed"):
+                    return self._err(400, "branch report needs vehicle and status in started/complete/failed")
+                _branch.update({"vehicle": body["vehicle"], "status": status, "updated_at": _now()})
+                self._ok(_branch)
             elif p == "/replicate":
                 # OpenClaw 에이전트가 복제 명령을 내릴 때 호출
                 # POST /replicate {"vehicle_id": "platoon_a_truck2"}

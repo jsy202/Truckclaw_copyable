@@ -11,7 +11,6 @@ def test_replicate_triggers_carla_with_vehicle_id(client, replicate_receiver):
     assert replicate_receiver.triggers[0] == {"vehicle_id": "platoon_a_truck2"}
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C08: POST /branch returns 404 - the scenario reports started/complete to an endpoint the bridge does not implement (errors are swallowed by _bridge_post)")
 def test_bridge_accepts_branch_progress_reports(client):
     # REQ: the bridge must record the split lifecycle the scenario reports, so agents/operators can observe it.
     for status in ("started", "complete"):
@@ -26,3 +25,12 @@ def test_replicate_rejects_unknown_vehicle(client, replicate_receiver):
     status, _ = client.post("/replicate", {"vehicle_id": "ghost_truck9"})
     assert status == 404
     assert replicate_receiver.count() == 0
+
+
+def test_branch_report_rejects_unknown_status(client):
+    assert client.post("/branch", {"vehicle": "truck2", "status": "banana"})[0] == 400
+
+
+def test_branch_failed_report_is_recorded(client):
+    assert client.post("/branch", {"vehicle": "truck2", "status": "failed"})[0] == 200
+    assert client.get("/branch")[1]["status"] == "failed"
