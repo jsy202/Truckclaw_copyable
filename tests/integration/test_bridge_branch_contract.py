@@ -19,7 +19,6 @@ def test_bridge_accepts_branch_progress_reports(client):
     assert client.get("/snapshot")[1]["branch"]["status"] == "complete"
 
 
-@pytest.mark.xfail(strict=True, reason="DEF-C09: /replicate accepts an unknown vehicle_id and triggers CARLA")
 def test_replicate_rejects_unknown_vehicle(client, replicate_receiver):
     # REQ: replication may only be requested for a vehicle that exists in the bridge state.
     status, _ = client.post("/replicate", {"vehicle_id": "ghost_truck9"})

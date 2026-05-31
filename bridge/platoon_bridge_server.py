@@ -272,6 +272,8 @@ class Handler(BaseHTTPRequestHandler):
                 # OpenClaw 에이전트가 복제 명령을 내릴 때 호출
                 # POST /replicate {"vehicle_id": "platoon_a_truck2"}
                 vid = body.get("vehicle_id", "platoon_a_truck2")
+                if _find_vehicle(vid)[1] is None:
+                    return self._err(404, f"unknown vehicle_id: {vid}")
                 _notify_carla_replicate(vid)
                 self._ok({"ok": True, "vehicle_id": vid, "status": "replicate_triggered"})
             elif p == "/transfers":
