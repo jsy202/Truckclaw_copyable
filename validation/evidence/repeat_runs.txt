@@ -1,0 +1,11 @@
+# 10 consecutive full-suite runs (Python 3.10.12, pytest 8.4.2), 2026-10-01, code at 2e2bf63
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
+21 passed in 3.04s
