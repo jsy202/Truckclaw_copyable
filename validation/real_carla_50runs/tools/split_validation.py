@@ -113,6 +113,7 @@ def evaluate_split(initial, events, final):
         and detach.get("detached_members") == ["truck2"],
         "gap_ready": bool(gap) and gap.get("gap_m", -1) >= 15.0 and gap.get("stable_ticks", -1) >= 10,
         "lane_separation": bool(lane_event) and len(main_lane) == 1 and target_lane not in main_lane and None not in target_lane,
+        "no_forced_transition": bool(lane_event) and not lane_event.get("forced", False),
         "logical_membership": final.get("main_members") == ["truck0", "truck1"] and final.get("detached_members") == ["truck2"],
         "actors_alive": set(actors_f) == set(TRUCKS) and all(actors_f[n].get("alive") for n in TRUCKS),
         "vehicles_moving": all(actors_f.get(n, {}).get("speed_kmh", 0) > 0 for n in TRUCKS),

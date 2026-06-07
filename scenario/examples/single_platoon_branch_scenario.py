@@ -273,10 +273,13 @@ class BranchCoordinator:
         self._target_lane_id = None
         self._target_lane_wpt = None
         self.last_status = "idle"
+        self.validation_recorder = None
 
     def trigger(self):
-        if self.state == BranchState.CRUISE:
+        if self.state == BranchState.CRUISE and not self.triggered:
             self.triggered = True
+            if self.validation_recorder:
+                self.validation_recorder.record("trigger", accepted=True)
 
     def camera_target(self):
         if self._v and self.state not in (BranchState.CRUISE, BranchState.MIGRATE):
@@ -336,6 +339,8 @@ class BranchCoordinator:
             self._pid = _make_pid(self._v._carla_vehicle)
             print(f"[branch] truck2 분리. 잔여 군집: {len(self.platoon)}대")
             self.last_status = "gap_opening"
+            if self.validation_recorder:
+                self.validation_recorder.record("logical_detach")
             return
 
         # 앞차(truck1)와의 간격 확보
@@ -355,6 +360,8 @@ class BranchCoordinator:
         self.last_status = f"gap={gap:.1f}/{OPEN_GAP_READY_M}m ok={self._gap_ok}"
         if self._gap_ok >= GAP_STABLE_TICKS:
             print(f"[branch] 간격 확보 완료 ({gap:.1f}m) → LC 시작")
+            if self.validation_recorder:
+                self.validation_recorder.record("gap_ready", gap_m=float(gap), stable_ticks=self._gap_ok)
             self._start_lc()
 
     def _start_lc(self):
@@ -391,12 +398,16 @@ class BranchCoordinator:
             print(f"[branch] 차선 변경 완료 → SIDE_BY_SIDE (나란히 가기 시작)")
             self.state = BranchState.SIDE_BY_SIDE
             self._ticks = 0
+            if self.validation_recorder:
+                self.validation_recorder.record("lane_separated", forced=False)
             return
 
         if self._ticks > 2000:
             print(f"[branch] LC 타임아웃 → SIDE_BY_SIDE 강제 전환")
             self.state = BranchState.SIDE_BY_SIDE
             self._ticks = 0
+            if self.validation_recorder:
+                self.validation_recorder.record("lane_separated", forced=True)
             return
 
         self.last_status = f"LC ticks={self._ticks}"
@@ -449,6 +460,8 @@ class BranchCoordinator:
         _bridge_post("/branch", {"vehicle":"truck2","status":"complete"})
         _branch_complete_event.set()
         self.state = BranchState.DONE
+        if self.validation_recorder:
+            self.validation_recorder.record("done")
         print("[branch] >>> 분기 완료! truck2 독립 주행 시작")
 
     def status_line(self):
@@ -512,6 +525,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-openclaw",    action="store_true")
     p.add_argument("--auto-trigger-s", type=float, default=0.0)
+    p.add_argument("--validation-evidence-dir", default="")
+    p.add_argument("--validation-ready-s", type=float, default=5.0)
+    p.add_argument("--validation-settle-s", type=float, default=2.0)
     args = p.parse_args()
 
     # ── watch 스크립트 로그 초기화 (이전 실행 잔존 방지) ────────────────────────
@@ -583,6 +599,24 @@ def main():
     camera = SmoothCamera(sim.spectator, coord)
     kb     = KeyInput()
 
+    validation_recorder = None
+    if args.validation_evidence_dir:
+        validation_tools = _PROJECT / "validation" / "real_carla_50runs" / "tools"
+        sys.path.insert(0, str(validation_tools))
+        from scenario_recorder import ScenarioRecorder
+        from split_validation import platoon_snapshot
+        vehicles = {f"truck{i}": platoon[i] for i in range(PLATOON_SIZE)}
+        names = {id(vehicle): name for name, vehicle in vehicles.items()}
+        validation_recorder = ScenarioRecorder(
+            args.validation_evidence_dir,
+            lambda: platoon_snapshot(coord, sim, names),
+            ready_s=args.validation_ready_s,
+            settle_s=args.validation_settle_s,
+        )
+        coord.validation_recorder = validation_recorder
+        validation_recorder.capture_initial()
+        validation_recorder.attach_collision_sensors(sim.world, vehicles, carla)
+
     step = 0; auto_triggered = False
 
     def speeds(): return ", ".join(f"t{i}={v.speed*3.6:.1f}" for i, v in enumerate(platoon))
@@ -593,6 +627,9 @@ def main():
     try:
         while True:
             if step * DT > 600.0: break
+
+            if validation_recorder:
+                validation_recorder.maybe_ready(step * DT)
 
             key = kb.read()
             if key == "3" and coord.state == BranchState.CRUISE:
@@ -616,6 +653,9 @@ def main():
             sim.run_step(mode="sample" if step % SAMPLING_RATE == 0 else "control")
             sim.tick()
             camera.update(None)
+
+            if validation_recorder and validation_recorder.poll(step * DT):
+                break
 
             if step % 100 == 0:
                 d_status = _get_docker_status()
@@ -644,6 +684,10 @@ def main():
 
             step += 1
     finally:
+        if validation_recorder:
+            if not validation_recorder.finished:
+                validation_recorder.abort("scenario_exit_before_validation_complete")
+            validation_recorder.close()
         kb.restore()
         sim.release_synchronous()
         # watch 스크립트 로그 초기화 (Ctrl+C 후 재시작 시 잔존 방지)

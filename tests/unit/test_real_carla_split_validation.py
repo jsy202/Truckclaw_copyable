@@ -1,7 +1,10 @@
 import json
 
 import pytest
+from unittest.mock import MagicMock
 
+from fakes.carla_stub import load_scenario_module
+from validation.real_carla_50runs.tools.scenario_recorder import ScenarioRecorder
 from validation.real_carla_50runs.tools.split_validation import (
     atomic_write_json,
     evaluate_split,
@@ -56,6 +59,7 @@ def test_evaluator_requires_logical_and_physical_split_not_done_alone():
         (lambda i, e, f: e.__setitem__(2, {**e[2], "gap_m": 14.99}), "gap_ready"),
         (lambda i, e, f: e.__setitem__(2, {**e[2], "stable_ticks": 9}), "gap_ready"),
         (lambda i, e, f: f["actors"]["truck2"].update(lane_id=-3), "lane_separation"),
+        (lambda i, e, f: e.__setitem__(3, {**e[3], "forced": True}), "no_forced_transition"),
         (lambda i, e, f: f["post_done_displacement_m"].update(truck2=0.49), "independent_motion"),
         (lambda i, e, f: f["controllers"]["truck2"].update(type="FollowerController"), "independent_controller"),
         (lambda i, e, f: f["collisions"].append({"actor": "truck2"}), "collision_free"),
@@ -107,3 +111,47 @@ def test_summary_preserves_failures_and_uses_interpolated_percentiles():
     assert summary["timing"]["p95"] == 2.9
     assert summary["timing"]["max"] == 3.0
 
+
+def test_coordinator_records_only_one_accepted_trigger(monkeypatch):
+    scenario = load_scenario_module(monkeypatch)
+    coord = scenario.BranchCoordinator(MagicMock(), MagicMock(), MagicMock(), replicator=None)
+    recorder = MagicMock()
+    coord.validation_recorder = recorder
+    coord.trigger()
+    coord.trigger()
+    recorder.record.assert_called_once_with("trigger", accepted=True)
+
+
+def test_recorder_preserves_transition_order_and_waits_for_settle(tmp_path):
+    initial, events, final = good_split_evidence()
+    current = dict(initial)
+    recorder = ScenarioRecorder(tmp_path, lambda: current, ready_s=5.0, settle_s=2.0)
+    recorder.capture_initial()
+    assert recorder.maybe_ready(4.99) is False
+    assert recorder.maybe_ready(5.0) is True
+    for event in events:
+        current.clear()
+        current.update(final if event["event"] == "done" else initial)
+        recorder.record(event["event"], **{k: v for k, v in event.items() if k not in ("event", "since_trigger_s")})
+    assert recorder.poll(6.99) is False
+    assert recorder.poll(7.0) is True
+    saved = json.loads((tmp_path / "transition_events.json").read_text())
+    assert [item["event"] for item in saved] == [item["event"] for item in events]
+    assert (tmp_path / "final_snapshot.json").is_file()
+    assert json.loads((tmp_path / "result.json").read_text())["passed"] is True
+
+
+def test_collision_event_makes_recorded_run_fail(tmp_path):
+    initial, events, final = good_split_evidence()
+    current = dict(initial)
+    recorder = ScenarioRecorder(tmp_path, lambda: current, ready_s=0.0, settle_s=2.0)
+    recorder.capture_initial()
+    recorder.record_collision("truck2", 31, 4.5)
+    for event in events:
+        current.clear()
+        current.update(final if event["event"] == "done" else initial)
+        recorder.record(event["event"], **{k: v for k, v in event.items() if k not in ("event", "since_trigger_s")})
+    assert recorder.poll(2.0) is True
+    result = json.loads((tmp_path / "result.json").read_text())
+    assert result["passed"] is False
+    assert "collision_free" in result["failure_reasons"]
