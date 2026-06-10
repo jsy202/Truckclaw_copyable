@@ -1,0 +1,30 @@
+{
+  "checks": {
+    "actors_alive": true,
+    "collision_free": true,
+    "done": true,
+    "gap_ready": true,
+    "independent_controller": true,
+    "independent_motion": true,
+    "initial_state": true,
+    "lane_separation": true,
+    "logical_detach_observed": true,
+    "logical_membership": true,
+    "no_forced_transition": true,
+    "single_trigger": true,
+    "vehicles_moving": true
+  },
+  "cleanup_failure": false,
+  "crash": false,
+  "failure_reasons": [],
+  "passed": true,
+  "run": 8,
+  "timeout": false,
+  "timings": {
+    "ready_to_trigger_s": 0.047544,
+    "trigger_to_detach_s": 0.007125,
+    "trigger_to_done_s": 5.572,
+    "trigger_to_gap_ready_s": 0.047194,
+    "trigger_to_lane_separated_s": 0.696727
+  }
+}

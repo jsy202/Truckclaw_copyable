@@ -375,3 +375,53 @@ Truckclaw-improve의 bridge transfer 결함 11건도 이 저장소에 그대로 
 - README의 포트 표기(18792)와 코드(18793)가 다르다.
 
 문서: [validation/](validation/)
+
+---
+
+## Real CARLA 50-Run Split Physical Validation (2026-10-03)
+
+동일한 고정 CARLA 조건에서 50회 반복 실행해 50/50 완료 및 logical/physical state consistency 50/50을 확인했다.
+
+### 검증 결과 요약
+
+| 지표 | 결과 | 비고 |
+|---|---:|---|
+| Real CARLA Runs | 50 | 독립 CARLA 서버 프로세스 그룹 격리 실행 |
+| 물리 분기 완료 (PASS) | 50/50 | timeout 0, crash 0, cleanup failure 0 |
+| Logical / physical consistency | 50/50 | `[truck0, truck1]` 유지 및 `truck2` 독립 LeadNavigator 배정 |
+| Agent Copy | Not tested | 이미지 및 Discord 게이트웨이 환경 부재로 미검증 |
+
+- **주요 타이밍 (raw evidence 기반 평균/중앙값/최대값)**:
+  - `trigger → logical_detach`: mean 0.006440 s / p50 0.006252 s / p95 0.008413 s / max 0.009025 s
+  - `trigger → gap_ready`: mean 0.047792 s / p50 0.048274 s / p95 0.056017 s / max 0.063378 s
+  - `trigger → lane_separated`: mean 0.655984 s / p50 0.667157 s / p95 0.793306 s / max 0.808414 s
+  - `trigger → done`: mean 5.761277 s / p50 5.494773 s / p95 6.350484 s / max 17.032763 s
+  *(Run 004의 경우 목표 인접 차선 대신 road 8 램프 분기 경로를 통해 물리 이격 31.6m로 DONE에 도달함)*
+
+### Defect 및 수정 (VAL-S01)
+
+- **결함 증상**: 1차 50회 실행 중 Run 50에서 `CarlaUE4.sh` 래퍼 프로세스 종료 후 `CarlaUE4-Linux-Shipping` 자식 프로세스가 잔류하여 포트 2000 미정리 (cleanup failure) 발생.
+- **수정**: `stop_process()`에서 래퍼 Popen뿐 아니라 프로세스 그룹 전체를 감시하여 잔류 시 SIGKILL로 완전 정리하도록 runner 수정 (`evidence_before_fix/`에 원본 보존).
+- **회귀 검증**: `test_owned_child_is_killed_after_wrapper_exits_on_term` 단위 테스트 통과 후 전체 50회 처음부터 재실행하여 50/50 완료 및 cleanup failure 0 확인.
+
+### Comparison with Transfer / Leader Change
+
+| Scenario | Repository | Real CARLA Runs | Verification |
+|---|---|---:|---|
+| Transfer | Truckclaw-improve | 10 | request → physical merge → logical membership |
+| Split | Truckclaw_copyable | 50 | logical detach → physical separation → independent driving |
+| Leader Change | Truckclaw_movable | 50 | leader/controller transition → physical maneuver → old leader rejoin |
+
+### Limitations
+
+- **Fixed condition**: 고정된 CARLA 조건(Town06 고정 스폰, 단일 목표 속도, 단일 날씨)에서만 실행되었습니다.
+- **Single scenario configuration**: 3대 플래툰 단일 설정입니다.
+- **CARLA simulation**: CARLA 0.9.13 시뮬레이션 환경 검증이며 실차 검증이 아닙니다.
+- **Off-screen rendering**: `-RenderOffScreen` 모드 시뮬레이션입니다.
+- **carlacola fallback**: `vehicle.carlamotors.carlacola` 모델을 사용했습니다.
+- **OpenClaw Agent Copy Not tested**: 환경 부재로 미검증되었습니다.
+- **Generalization 미검증**: 다양한 환경에 대한 일반화는 검증되지 않았습니다.
+- CARLA-free 회귀 테스트 결과(기존 21/21 passed)는 실제 CARLA 50회 실행 통계와 별개입니다.
+
+상세 보고서: [validation/real_carla_50runs/validation_report.md](validation/real_carla_50runs/validation_report.md)
+

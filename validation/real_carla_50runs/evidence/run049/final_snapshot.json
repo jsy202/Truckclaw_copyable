@@ -1,0 +1,102 @@
+{
+  "actors": {
+    "truck0": {
+      "actor_id": 120,
+      "alive": true,
+      "lane_id": -3,
+      "location": {
+        "x": 160.5298,
+        "y": 136.5875,
+        "z": -0.0024
+      },
+      "road_id": 36,
+      "rotation": {
+        "pitch": 0.0554,
+        "roll": -0.0004,
+        "yaw": 0.219
+      },
+      "speed_kmh": 17.8933,
+      "type_id": "vehicle.carlamotors.carlacola",
+      "velocity": {
+        "x": 4.9703,
+        "y": 0.0211,
+        "z": -0.001
+      }
+    },
+    "truck1": {
+      "actor_id": 121,
+      "alive": true,
+      "lane_id": -3,
+      "location": {
+        "x": 144.6939,
+        "y": 136.5224,
+        "z": -0.0008
+      },
+      "road_id": 36,
+      "rotation": {
+        "pitch": -0.0573,
+        "roll": 0.0003,
+        "yaw": 0.2338
+      },
+      "speed_kmh": 18.102,
+      "type_id": "vehicle.carlamotors.carlacola",
+      "velocity": {
+        "x": 5.0283,
+        "y": 0.0205,
+        "z": 0.0014
+      }
+    },
+    "truck2": {
+      "actor_id": 122,
+      "alive": true,
+      "lane_id": -4,
+      "location": {
+        "x": 161.1186,
+        "y": 140.0878,
+        "z": -0.0024
+      },
+      "road_id": 36,
+      "rotation": {
+        "pitch": 0.0594,
+        "roll": 0.0025,
+        "yaw": 0.2809
+      },
+      "speed_kmh": 18.103,
+      "type_id": "vehicle.carlamotors.carlacola",
+      "velocity": {
+        "x": 5.0286,
+        "y": 0.02,
+        "z": 0.0007
+      }
+    }
+  },
+  "collisions": [],
+  "controllers": {
+    "truck0": {
+      "platoon": "main",
+      "type": "LeadNavigator"
+    },
+    "truck1": {
+      "platoon": "main",
+      "type": "FollowerController"
+    },
+    "truck2": {
+      "platoon": "detached",
+      "type": "LeadNavigator"
+    }
+  },
+  "detached_members": [
+    "truck2"
+  ],
+  "leader": "truck0",
+  "main_members": [
+    "truck0",
+    "truck1"
+  ],
+  "post_done_displacement_m": {
+    "truck2": 9.610191
+  },
+  "scenario_state": "DONE",
+  "simulation_platoon_count": 2,
+  "trigger_count": 1
+}
