@@ -1,6 +1,6 @@
 # Test Report — Truckclaw_copyable (Post-project Validation)
 
-> 연구 종료 후(2026-10-01) 수행한 검증이다. 연구 당시의 CARLA 분기와 실제 Docker 복제 시연은 재실행하지 않았다.
+> 연구 종료 후 수행한 검증이다. 연구 당시의 CARLA 분기와 실제 Docker 복제 시연은 재실행하지 않았다.
 
 ## 환경
 

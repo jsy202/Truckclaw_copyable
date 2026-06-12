@@ -1,6 +1,6 @@
 # Requirements — Truckclaw_copyable (Split / Agent Replication)
 
-> 연구 종료 후(2026-10) 수행한 Post-project Validation 산출물이다.
+> 연구 종료 후 수행한 Post-project Validation 산출물이다.
 >
 > - 출처: Existing = README/코드에 명시됨, Derived = 기존 설계에서 도출됨, Proposed = 이번에 새로 제안함
 > - 증거 등급: A = 실행, B = 정적 분석, C = 제안

@@ -1,4 +1,4 @@
-# Current tests (code at 2e2bf63) run with --runxfail against research-baseline (24cee6b) sources, 2026-10-01
+# Current tests (code at 2e2bf63) run with --runxfail against research-baseline (24cee6b) sources
 FAILED tests/integration/test_bridge_branch_contract.py::test_bridge_accepts_branch_progress_reports
 FAILED tests/integration/test_bridge_branch_contract.py::test_replicate_rejects_unknown_vehicle
 FAILED tests/integration/test_bridge_branch_contract.py::test_branch_report_rejects_unknown_status
