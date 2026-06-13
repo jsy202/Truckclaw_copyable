@@ -143,13 +143,14 @@ def create_config_bundle(output_path, truck1_agent_dir, truck3_template_dir):
                 _print(f"  [{action:5s}] {rel}")
             else:
                 _print(f"  [SKIP ] {rel}")
+        missing = [rel for rel in IDENTITY_FILES if not (truck3_template_dir / rel).exists()]
+        if missing:
+            # 정체성 파일 없이 복제된 agent는 잘못된 차량/목적지로 동작할 수 있음 — 복제 실패로 처리
+            raise RuntimeError(f"identity template incomplete ({truck3_template_dir}): missing {', '.join(missing)}")
         for rel in IDENTITY_FILES:
             src = truck3_template_dir / rel; dst = tmp / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            if src.exists():
-                shutil.copy2(src, dst); _print(f"  [id   ] {rel}")
-            else:
-                _print(f"  [SKIP ] {rel}")
+            shutil.copy2(src, dst); _print(f"  [id   ] {rel}")
         with tarfile.open(output_path, "w:gz") as tar:
             tar.add(tmpdir, arcname=".")
     _print(f"  완료: {output_path.stat().st_size/1024:.1f} KB")
@@ -176,17 +177,32 @@ class BranchReplicator:
         
         self._done_event         = threading.Event()
         self._success            = False
+        self._running            = False
+        self._state_lock         = threading.Lock()
 
     def replicate(self, blocking=True):
+        with self._state_lock:
+            if self._running:
+                # 이미 복제 진행 중 (예: /start_replicate 후 분기 트리거) — 중복 실행하지 않음
+                return True
+            self._running = True
+            # 새 실행: 이전 실행(실패 포함)의 완료 상태를 초기화
+            self._done_event.clear()
+            self._success = False
         if blocking:
             self._run()
-        else:
-            t = threading.Thread(target=self._run, daemon=True)
-            t.start()
-        return True
+            return self._success   # 동기 실행: 실제 성공 여부 (CLI 종료 코드에 사용)
+        t = threading.Thread(target=self._run, daemon=True)
+        t.start()
+        return True                # 비동기: "시작됨" — 결과는 wait()/finished()로 확인
 
     def wait(self, timeout=120.0):
-        return self._done_event.wait(timeout=timeout)
+        """완료되었고 '성공'한 경우에만 True (실패/진행 중이면 False)."""
+        return self._done_event.wait(timeout=timeout) and self._success
+
+    def finished(self):
+        """성공/실패와 무관하게 복제 작업이 끝났는지."""
+        return self._done_event.is_set()
 
     def _run(self):
         tx_dir = self.transfer_dir / "tx"
@@ -242,6 +258,8 @@ class BranchReplicator:
             self._success = False
         finally:
             _tlog.logfile = None
+            with self._state_lock:
+                self._running = False
             self._done_event.set()
 
     def _load_and_run(self, rx_image, rx_config):

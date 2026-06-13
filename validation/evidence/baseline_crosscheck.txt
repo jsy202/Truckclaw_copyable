@@ -1,0 +1,14 @@
+# Current tests (code at 2e2bf63) run with --runxfail against research-baseline (24cee6b) sources
+FAILED tests/integration/test_bridge_branch_contract.py::test_bridge_accepts_branch_progress_reports
+FAILED tests/integration/test_bridge_branch_contract.py::test_replicate_rejects_unknown_vehicle
+FAILED tests/integration/test_bridge_branch_contract.py::test_branch_report_rejects_unknown_status
+FAILED tests/integration/test_bridge_branch_contract.py::test_branch_failed_report_is_recorded
+FAILED tests/integration/test_split_replication.py::test_wait_reports_failure_after_failed_replication
+FAILED tests/integration/test_split_replication.py::test_cli_exit_code_reflects_replication_failure
+FAILED tests/integration/test_split_replication.py::test_replication_fails_when_identity_template_missing
+FAILED tests/integration/test_split_replication.py::test_scenario_branch_agent_dir_exists_in_repo
+FAILED tests/integration/test_split_replication.py::test_concurrent_replicate_calls_run_once
+FAILED tests/integration/test_split_replication.py::test_split_does_not_proceed_when_replication_fails
+FAILED tests/integration/test_split_replication.py::test_coordinator_times_out_hung_replication
+FAILED tests/integration/test_split_replication.py::test_replication_fails_when_one_identity_file_is_missing
+12 failed, 9 passed in 2.57s

@@ -31,3 +31,6 @@ venv/
 .openclaw-truck1/
 .transfer/
 .env.single-platoon
+
+# 테스트
+.pytest_cache/

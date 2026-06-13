@@ -318,3 +318,132 @@ OpenClaw는 차량마다 아래 파일들을 system prompt처럼 읽고 행동�
 | 포트 18792 고정 (truck3) | truck1의 18789와 충돌 방지 |
 | GAP 50 tick 하이스테리시스 | 0.5초 안정 확인으로 진동에 의한 조기 분리 방지 |
 | threading.Lock on state write | SPAWN_OC 스레드와 메인 루프 경쟁 조건 방지 |
+
+---
+
+## Post-project Split & Agent Replication Verification
+
+> 이 섹션은 **연구 종료 후** 수행한 검증 작업이다.
+> 위의 설명과 설계 근거는 연구 당시 내용이며 수정하지 않았다.
+> 아래에 적은 결함은 **이번 검증에서 처음 발견한 것**이다. 연구 당시 코드는 tag `research-baseline`(`24cee6b`)에 보존되어 있다.
+
+### 검증 목적
+
+분기 차량에 AI agent를 복제하는 과정이 실패하거나 지연될 때 다음이 지켜지는지 확인한다.
+
+- **agent 없이 물리 분기가 일어나지 않는가**
+- **복제된 agent가 올바른 정체성을 갖는가**
+
+CARLA와 Docker 없이 확인한다.
+
+### 테스트 구조
+
+```text
+[Production]  BranchCoordinator ─▶ BranchReplicator ─▶ docker save/load/run
+              scenario ─▶ bridge /branch, agent ─▶ bridge /replicate ─▶ CARLA :18802
+[Test]        BranchCoordinator (carla stub) ─▶ 실제 BranchReplicator ─▶ FakeDocker (subprocess.run 대체)
+              pytest ─▶ 실제 bridge Handler (in-process) ─▶ FakeTriggerReceiver
+```
+
+### 발견한 결함 (실제 실행으로 재현) → 수정
+
+| ID | 결함 | 수정 |
+|---|---|---|
+| DEF-C01 | `wait()`가 복제에 **실패한 뒤에도** True | `84e0d1a` |
+| DEF-C06 | 그 결과 복제 실패 후에도 물리 분기(GAP) 진행 → agent 없는 분기 차량 | `84e0d1a` |
+| DEF-C07 | MIGRATE timeout 없음 | `14a340b` |
+| DEF-C05 | `/start_replicate` 후 분기 trigger가 오면 복제 2회 동시 실행 | `7645f7a` |
+| DEF-C02 | 단독 CLI가 실패해도 exit 0 | `accfabc` |
+| DEF-C04 | 시나리오가 존재하지 않는 `agents/truck2`를 정체성 템플릿으로 전달 → 복제 agent에 AGENTS.md와 destinations가 빠짐. 위 설계 근거 표의 "destinations.json 재생성" 의도와 어긋남 | `364a645` |
+| DEF-C03 | 정체성 파일이 없어도 복제 "성공" | `e90256d` (+ `d0e2d31`: 이 commit에 들어간 문법 오류 수정) |
+| DEF-C08 | 시나리오가 보고하는 `POST /branch`가 bridge에 없음(404, 오류가 무시됨) | `75922b7` (기록만 하는 최소 구현) |
+| DEF-C09 | `/replicate`가 알 수 없는 차량으로도 CARLA trigger | `b2695bb` |
+
+Truckclaw-improve의 bridge transfer 결함 11건도 이 저장소에 그대로 있다. 실행으로 재현했지만 이 저장소에서는 수정하지 않았다.
+
+### 결과 (로컬)
+
+- 21 passed, 0 xfailed, 0 failed. 10회 연속 실행에서 같은 결과였다.
+- 같은 테스트를 baseline 소스에 실행하면 12 failed, 9 passed다.
+- CI(`.github/workflows/test.yml`)는 아직 push하지 않아 **GitHub에서 실행된 기록이 없다.**
+
+### Limitations
+
+- CARLA 물리 분기, 실제 Docker 및 Discord 동작은 확인하지 않았다.
+- 신규 agent의 gateway readiness는 확인하지 않는다.
+- `/branch`는 기록만 하며 bridge 멤버십은 바꾸지 않는다.
+- README의 포트 표기(18792)와 코드(18793)가 다르다.
+
+문서: [validation/](validation/)
+
+---
+
+## Post-project Real-CARLA Validation
+
+Logical and physical state consistency was observed in all 50 runs under the tested fixed scenario.
+
+### Test Environment
+
+- **Simulator**: CARLA 0.9.13 (Python 3.7.17 client)
+- **Host OS**: Ubuntu 22.04 LTS (Linux 6.8.0-138-generic)
+- **Hardware**: NVIDIA GeForce RTX 3060
+- **Rendering**: `-RenderOffScreen` (실제 CARLA 물리 시뮬레이션이며 디스플레이 출력만 생략)
+- **Map**: Town06
+- **Vehicle Blueprint**: `vehicle.carlamotors.carlacola` (기존 blueprint fallback)
+
+### Validation Criteria
+
+Split 동작 완료 판정은 단순 `DONE` 상태 도달이 아닌 아래 invariant를 동시에 만족해야 합니다:
+- 최종 시나리오 상태: `DONE`
+- 최종 플래툰 멤버십: 기존 대열 `[truck0, truck1]`, 분기 차량 `truck2` 독립 분리
+- 컨트롤러 배정: `truck2`에 독립 `LeadNavigator` 정상 배정
+- 간격 조건: `gap_ready` 관측 (간격 >= 15.0 m 및 10 ticks 안정 유지)
+- 차선 및 물리적 분리: 실제 차선 또는 물리적 이격 확인
+- 독립 주행: `truck2`의 `DONE` 이후 추가 변위 >= 0.5 m
+- 생존 및 충돌: 전 차량 actor 생존 및 무충돌 (collision count 0)
+
+### Results
+
+| Metric | Result |
+|---|---:|
+| Runs | 50 |
+| Success | 50/50 |
+| Logical / Physical Consistency | 50/50 |
+| Timeout | 0 |
+| Crash | 0 |
+| Cleanup Failure | 0 |
+
+*참고: Agent Copy는 `openclaw:local` 이미지, Discord gateway, 소스 에이전트 환경 부재로 `Not tested`로 분리되었으며, CARLA 물리 분기 결과에 합산되지 않습니다.*
+
+### Timing
+
+| Phase | Mean | P50 (Median) | P95 | Max | Min |
+|---|---:|---:|---:|---:|---:|
+| `trigger → logical_detach` | 0.006440 s | 0.006252 s | 0.008413 s | 0.009025 s | 0.005469 s |
+| `trigger → gap_ready` | 0.047792 s | 0.048274 s | 0.056017 s | 0.063378 s | 0.038002 s |
+| `trigger → lane_separated` | 0.655984 s | 0.667157 s | 0.793306 s | 0.808414 s | 0.046153 s |
+| `trigger → done` | 5.761277 s | 5.494773 s | 6.350484 s | 17.032763 s | 4.752508 s |
+
+*49개 run은 인접 차선(lane -4)으로 변경 완료하였으며, Run 004는 waypoint geometry 특성으로 road 8 램프 분기 주행(물리 이격 약 31.6 m)으로 invariant를 충족하였습니다.*
+
+### Validation Defect Found
+
+- **VAL-S01 (CARLA child process 잔류 및 포트 미해제)**:
+  - **현상**: 1차 50회 검증 중 Run 50에서 `CarlaUE4.sh` 래퍼 프로세스 종료 후 `CarlaUE4-Linux-Shipping` 자식 프로세스가 잔류하여 포트 2000이 점유된 상태로 남아 cleanup failure 발생 (`evidence_before_fix/`에 원본 보존).
+  - **원인**: `stop_process()`가 래퍼 `Popen` 종료만 확인하고 동일 프로세스 그룹 내 자식 잔류 여부를 확인하지 않음.
+  - **수정**: 프로세스 그룹 단위 감시 및 유예 후 SIGKILL escalation 적용.
+  - **회귀 검증**: `test_owned_child_is_killed_after_wrapper_exits_on_term` 통과 후 전체 50회 처음부터 재실행하여 50/50 PASS 및 cleanup failure 0 달성.
+
+### Limitations
+
+- **Fixed Condition**: Town06 단일 고정 spawn, 단일 목표 속도, 단일 날씨 조건에서만 검증되었습니다.
+- **Single Scenario Configuration**: 3대 플래툰 단일 설정입니다.
+- **CARLA Simulation**: CARLA 0.9.13 시뮬레이션 환경 검증이며 실차 검증이 아닙니다.
+- **Off-screen Rendering**: `-RenderOffScreen` 모드 시뮬레이션입니다.
+- **Blueprint Fallback**: `vehicle.carlamotors.carlacola` 모델을 사용했습니다.
+- **Agent Copy Not tested**: 환경 부재로 Agent Copy는 테스트 대상에서 제외되었습니다.
+- **Generalization 미검증**: 다양한 환경에 대한 일반화는 검증되지 않았습니다.
+
+자세한 실험 데이터, 통계 및 감사 내역은 [validation/real_carla_50runs/validation_report.md](validation/real_carla_50runs/validation_report.md)를 참고하십시오.
+
+

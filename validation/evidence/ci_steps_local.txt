@@ -1,0 +1,4 @@
+# Local reproduction of CI steps, code at 2e2bf63
+compileall: ok
+3 passed in 0.01s
+18 passed in 3.04s

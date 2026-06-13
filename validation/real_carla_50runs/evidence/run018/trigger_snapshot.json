@@ -1,0 +1,96 @@
+{
+  "actors": {
+    "truck0": {
+      "actor_id": 120,
+      "alive": true,
+      "lane_id": -3,
+      "location": {
+        "x": 100.7914,
+        "y": 136.3284,
+        "z": -0.0017
+      },
+      "road_id": 575,
+      "rotation": {
+        "pitch": 0.0092,
+        "roll": -0.0031,
+        "yaw": 0.3888
+      },
+      "speed_kmh": 18.0689,
+      "type_id": "vehicle.carlamotors.carlacola",
+      "velocity": {
+        "x": 5.019,
+        "y": 0.036,
+        "z": 0.0006
+      }
+    },
+    "truck1": {
+      "actor_id": 121,
+      "alive": true,
+      "lane_id": -3,
+      "location": {
+        "x": 82.5693,
+        "y": 136.2684,
+        "z": 0.0
+      },
+      "road_id": 575,
+      "rotation": {
+        "pitch": -0.1098,
+        "roll": -0.0003,
+        "yaw": 0.2128
+      },
+      "speed_kmh": 19.5835,
+      "type_id": "vehicle.carlamotors.carlacola",
+      "velocity": {
+        "x": 5.4398,
+        "y": 0.0233,
+        "z": 0.0
+      }
+    },
+    "truck2": {
+      "actor_id": 122,
+      "alive": true,
+      "lane_id": -3,
+      "location": {
+        "x": 64.3911,
+        "y": 136.1943,
+        "z": -0.0009
+      },
+      "road_id": 575,
+      "rotation": {
+        "pitch": -0.046,
+        "roll": 0.0001,
+        "yaw": 0.2314
+      },
+      "speed_kmh": 21.5329,
+      "type_id": "vehicle.carlamotors.carlacola",
+      "velocity": {
+        "x": 5.9813,
+        "y": 0.0241,
+        "z": -0.0
+      }
+    }
+  },
+  "controllers": {
+    "truck0": {
+      "platoon": "main",
+      "type": "LeadNavigator"
+    },
+    "truck1": {
+      "platoon": "main",
+      "type": "FollowerController"
+    },
+    "truck2": {
+      "platoon": "main",
+      "type": "FollowerController"
+    }
+  },
+  "detached_members": [],
+  "leader": "truck0",
+  "main_members": [
+    "truck0",
+    "truck1",
+    "truck2"
+  ],
+  "scenario_state": "CRUISE",
+  "simulation_platoon_count": 1
+}

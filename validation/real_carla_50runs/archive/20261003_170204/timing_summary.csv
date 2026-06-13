@@ -1,0 +1,2 @@
+run,ready_to_trigger_s,trigger_to_detach_s,trigger_to_gap_ready_s,trigger_to_lane_separated_s,trigger_to_done_s
+1,0.251545,0.006821,0.042848,0.624677,5.143978

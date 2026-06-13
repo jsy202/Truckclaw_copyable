@@ -1,0 +1,23 @@
+# python3 -m pytest -v code at 2e2bf63
+tests/integration/test_bridge_branch_contract.py::test_replicate_triggers_carla_with_vehicle_id PASSED
+tests/integration/test_bridge_branch_contract.py::test_bridge_accepts_branch_progress_reports PASSED
+tests/integration/test_bridge_branch_contract.py::test_replicate_rejects_unknown_vehicle PASSED
+tests/integration/test_bridge_branch_contract.py::test_branch_report_rejects_unknown_status PASSED
+tests/integration/test_bridge_branch_contract.py::test_branch_failed_report_is_recorded PASSED
+tests/integration/test_split_replication.py::test_replication_with_shipped_template_starts_branch_agent PASSED
+tests/integration/test_split_replication.py::test_config_bundle_patches_identity_in_soul PASSED
+tests/integration/test_split_replication.py::test_v2v_transfer_is_byte_identical PASSED
+tests/integration/test_split_replication.py::test_docker_run_failure_marks_replication_failed PASSED
+tests/integration/test_split_replication.py::test_wait_reports_failure_after_failed_replication PASSED
+tests/integration/test_split_replication.py::test_cli_exit_code_reflects_replication_failure PASSED
+tests/integration/test_split_replication.py::test_replication_fails_when_identity_template_missing PASSED
+tests/integration/test_split_replication.py::test_scenario_branch_agent_dir_exists_in_repo PASSED
+tests/integration/test_split_replication.py::test_concurrent_replicate_calls_run_once PASSED
+tests/integration/test_split_replication.py::test_coordinator_advances_to_gap_after_successful_replication PASSED
+tests/integration/test_split_replication.py::test_split_does_not_proceed_when_replication_fails PASSED
+tests/integration/test_split_replication.py::test_coordinator_times_out_hung_replication PASSED
+tests/integration/test_split_replication.py::test_replication_fails_when_one_identity_file_is_missing PASSED
+tests/unit/test_identity_patch.py::test_patch_soul_rewrites_platoon_a_identity_to_truck3 PASSED
+tests/unit/test_identity_patch.py::test_patch_soul_appends_branch_note_with_destination PASSED
+tests/unit/test_identity_patch.py::test_identity_and_behavior_file_sets PASSED
+============================== 21 passed in 3.04s ==============================
